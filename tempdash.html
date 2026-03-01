@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Temperature Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <style>
+    :root{
+      --bg: #0f1417;
+      --card: #111519;
+      --muted: #9aa4ad;
+      --accent: #ffab40;
+      --glass: rgba(255,255,255,0.02);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background-color: var(--bg);
+      color: #e6eef6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      box-sizing: border-box;
+    }
+
+    /* Full-screen two-column layout: left = deltas, right = current + graph */
+    #dashboard {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 1fr;
+      gap: 15px;
+      height: 100vh;
+      padding: 15px;
+    }
+
+    /* Left column: vertical list of delta boxes, scrollable if needed */
+    .delta-boxes {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-auto-rows: minmax(50px, auto);
+      gap: 10px;
+      background-color: #1e1e1e;
+      padding: 15px;
+      border-radius: 12px;
+      height: 100%;
+      overflow: auto;
+    }
+
+    .delta-box {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.9));
+      padding: 14px 16px;
+      border-radius: 12px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.45);
+      border: 1px solid rgba(255,255,255,0.02);
+      min-height: 84px;
+    }
+
+    .delta-box:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+    }
+
+    .delta-time{ font-size: 13px; color: var(--muted); font-weight:600; }
+    .delta-value{ font-size: 18px; color: var(--accent); font-weight:800; }
+    .delta-temp{ font-size: 12px; color: var(--muted); }
+
+    .delta-left{ display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:90px; }
+    .delta-min{ font-size: 18px; font-weight:800; color: #e6eef6; }
+    .delta-min-time{ font-size: 12px; color: var(--muted); font-weight:600; }
+
+    .delta-main{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex:1; }
+    .delta-amount{ font-size: 28px; font-weight:900; color: var(--accent); }
+    .delta-temp{ font-size: 13px; color: var(--muted); }
+
+    /* Trend arrow styles */
+    .trend{ display:inline-block; font-size:20px; vertical-align:middle; margin-right:8px; }
+    .trend-up{ color: #4ade80; }
+    .trend-down{ color: #ff6b6b; }
+    .trend-flat{ color: var(--muted); }
+
+    /* Right column wrapper */
+    #right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      height: 100%;
+    }
+
+    /* Current temp: large, aligned to the right of the right column */
+    #current-temp {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
+      border-radius: 12px;
+      padding: 18px 22px;
+      font-weight: 800;
+      text-align: center;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+      max-width: 480px;
+      width: 100%;
+      align-self: flex-end;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    #current-temp .temp-value{ font-size: clamp(28px,8vw,72px); color: var(--accent); }
+    #current-temp .temp-time{ font-size: 13px; color: var(--muted); margin-top: 6px; font-weight:600; }
+
+    #temp-graph-container {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.9));
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0; /* allow flex child to shrink properly */
+    }
+
+    #temp-graph {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    button {
+      margin-bottom: 10px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      align-self: flex-start;
+      backdrop-filter: blur(6px);
+    }
+
+    button:hover { color: var(--accent); border-color: rgba(255,171,64,0.25); }
+  </style>
+</head>
+
+<body>
+
+  <div id="dashboard">
+    <!-- Left: Temperature changes -->
+    <div class="delta-boxes" id="delta-boxes">
+      <div class="delta-box" data-minutes="1">1 min: --°F</div>
+      <div class="delta-box" data-minutes="5">5 min: --°F</div>
+      <div class="delta-box" data-minutes="15">15 min: --°F</div>
+      <div class="delta-box" data-minutes="30">30 min: --°F</div>
+      <div class="delta-box" data-minutes="60">1 hr: --°F</div>
+      <div class="delta-box" data-minutes="180">3 hr: --°F</div>
+      <div class="delta-box" data-minutes="360">6 hr: --°F</div>
+      <div class="delta-box" data-minutes="720">12 hr: --°F</div>
+      <div class="delta-box" data-minutes="1440">24 hr: --°F</div>
+    </div>
+
+    <!-- Right column: current temp on top, graph fills remaining space -->
+    <div id="right-column">
+      <div id="current-temp">
+        <div class="temp-value">--°F</div>
+        <div class="temp-time">--:--</div>
+      </div>
+      <div id="temp-graph-container">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+          <button onclick="toggleFullscreen()">Fullscreen Graph</button>
+          <label style="color:var(--muted);font-weight:600">Color Mode:</label>
+          <select id="color-mode" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:700;">
+            <option value="temp">Temp color</option>
+            <option value="delta">Delta color</option>
+          </select>
+          <select id="delta-window" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <option value="1">1m</option>
+            <option value="5" selected>5m</option>
+            <option value="15">15m</option>
+            <option value="30">30m</option>
+            <option value="60">1h</option>
+            <option value="180">3h</option>
+          </select>
+        </div>
+        <div id="temp-graph"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEVICE_ID = 470036;
+    const API_KEY = "4ca9b677-d072-439f-8920-22ea9c630dd8";
+    // Convert C → F (returns number)
+    const cToF = c => (c * 9 / 5 + 32);
+    // temperature color map from CSV
+    const tempColorMap = [
+      {temp:-61,r:44,g:90,b:114},{temp:-60,r:44,g:91,b:123},{temp:-59,r:54,g:101,b:128},{temp:-58,r:66,g:112,b:139},{temp:-57,r:73,g:124,b:143},{temp:-56,r:81,g:123,b:147},{temp:-55,r:84,g:127,b:146},{temp:-54,r:87,g:133,b:147},{temp:-53,r:95,g:148,b:161},{temp:-52,r:107,g:156,b:167},{temp:-51,r:110,g:161,b:169},{temp:-50,r:120,g:167,b:175},{temp:-49,r:125,g:177,b:181},{temp:-48,r:131,g:185,b:185},{temp:-47,r:135,g:187,b:188},{temp:-46,r:153,g:203,b:202},{temp:-45,r:154,g:203,b:201},{temp:-44,r:160,g:206,b:209},{temp:-43,r:170,g:220,b:219},{temp:-42,r:178,g:225,b:221},{temp:-41,r:177,g:233,b:224},{temp:-40,r:180,g:231,b:225},{temp:-39,r:177,g:233,b:223},{temp:-38,r:171,g:222,b:219},{temp:-37,r:170,g:216,b:216},{temp:-36,r:173,g:214,b:217},{temp:-35,r:168,g:209,b:217},{temp:-34,r:169,g:207,b:215},{temp:-33,r:165,g:195,b:217},{temp:-32,r:170,g:199,b:219},{temp:-31,r:162,g:193,b:213},{temp:-30,r:164,g:186,b:215},{temp:-29,r:163,g:184,b:213},{temp:-28,r:154,g:168,b:201},{temp:-27,r:158,g:171,b:205},{temp:-26,r:154,g:163,b:206},{temp:-25,r:152,g:153,b:200},{temp:-24,r:151,g:153,b:202},{temp:-23,r:149,g:149,b:199},{temp:-22,r:151,g:147,b:197},{temp:-21,r:145,g:129,b:190},{temp:-20,r:144,g:127,b:187},{temp:-19,r:147,g:126,b:194},{temp:-18,r:145,g:127,b:189},{temp:-17,r:147,g:122,b:193},{temp:-16,r:138,g:105,b:186},{temp:-15,r:138,g:103,b:185},{temp:-14,r:140,g:99,b:182},{temp:-13,r:140,g:98,b:183},{temp:-12,r:130,g:88,b:177},{temp:-11,r:135,g:90,b:182},{temp:-10,r:131,g:78,b:183},{temp:-9,r:126,g:73,b:178},{temp:-8,r:131,g:71,b:175},{temp:-7,r:127,g:60,b:174},{temp:-6,r:129,g:59,b:173},{temp:-5,r:128,g:54,b:173},{temp:-4,r:122,g:42,b:168},{temp:-3,r:121,g:38,b:170},{temp:-2,r:120,g:39,b:169},{temp:-1,r:121,g:38,b:172},{temp:0,r:157,g:64,b:173},{temp:1,r:156,g:64,b:172},{temp:2,r:170,g:86,b:185},{temp:3,r:165,g:97,b:182},{temp:4,r:166,g:103,b:183},{temp:5,r:174,g:113,b:189},{temp:6,r:181,g:128,b:198},{temp:7,r:184,g:145,b:203},{temp:8,r:194,g:162,b:213},{temp:9,r:194,g:165,b:210},{temp:10,r:190,g:178,b:213},{temp:11,r:191,g:182,b:203},{temp:12,r:206,g:208,b:226},{temp:13,r:210,g:219,b:229},{temp:14,r:211,g:221,b:229},{temp:15,r:223,g:232,b:237},{temp:16,r:210,g:222,b:232},{temp:17,r:192,g:212,b:223},{temp:18,r:184,g:207,b:230},{temp:19,r:177,g:201,b:225},{temp:20,r:165,g:191,b:216},{temp:21,r:154,g:174,b:209},{temp:22,r:135,g:163,b:203},{temp:23,r:111,g:148,b:204},{temp:24,r:109,g:148,b:205},{temp:25,r:104,g:143,b:208},{temp:26,r:84,g:127,b:193},{temp:27,r:71,g:120,b:189},{temp:28,r:67,g:116,b:185},{temp:29,r:56,g:104,b:186},{temp:30,r:38,g:89,b:175},{temp:31,r:38,g:89,b:178},{temp:32,r:19,g:68,b:84},{temp:33,r:27,g:76,b:88},{temp:34,r:44,g:85,b:94},{temp:35,r:55,g:97,b:100},{temp:36,r:69,g:108,b:103},{temp:37,r:82,g:120,b:109},{temp:38,r:95,g:129,b:113},{temp:39,r:108,g:140,b:117},{temp:40,r:122,g:150,b:125},{temp:41,r:136,g:160,b:128},{temp:42,r:150,g:170,b:133},{temp:43,r:162,g:181,b:140},{temp:44,r:175,g:191,b:144},{temp:45,r:189,g:200,b:150},{temp:46,r:204,g:210,b:154},{temp:47,r:217,g:223,b:161},{temp:48,r:227,g:231,b:159},{temp:49,r:244,g:242,b:165},{temp:50,r:247,g:238,b:159},{temp:51,r:239,g:225,b:152},{temp:52,r:234,g:213,b:145},{temp:53,r:225,g:200,b:138},{temp:54,r:217,g:188,b:128},{temp:55,r:210,g:175,b:119},{temp:56,r:200,g:163,b:110},{temp:57,r:191,g:150,b:103},{temp:58,r:186,g:137,b:94},{temp:59,r:179,g:124,b:83},{temp:60,r:169,g:113,b:77},{temp:61,r:162,g:100,b:69},{temp:62,r:156,g:88,b:61},{temp:63,r:145,g:76,b:53},{temp:64,r:140,g:62,b:41},{temp:65,r:130,g:50,b:33},{temp:66,r:123,g:38,b:27},{temp:67,r:115,g:25,b:17},{temp:68,r:108,g:13,b:9},{temp:69,r:101,g:0,b:0},{temp:70,r:95,g:0,b:0},{temp:71,r:98,g:5,b:5},{temp:72,r:102,g:10,b:13},{temp:73,r:108,g:14,b:20},{temp:74,r:112,g:19,b:27},{temp:75,r:116,g:24,b:35},{temp:76,r:120,g:29,b:45},{temp:77,r:125,g:34,b:51},{temp:78,r:130,g:38,b:57},{temp:79,r:134,g:44,b:64},{temp:80,r:115,g:55,b:45},{temp:81,r:124,g:63,b:53},{temp:82,r:127,g:73,b:63},{temp:83,r:135,g:82,b:72},{temp:84,r:142,g:92,b:83},{temp:85,r:148,g:101,b:91},{temp:86,r:153,g:111,b:99},{temp:87,r:162,g:119,b:110},{temp:88,r:166,g:130,b:120},{temp:89,r:175,g:138,b:128},{temp:90,r:181,g:146,b:138},{temp:91,r:189,g:155,b:144},{temp:92,r:193,g:166,b:155},{temp:93,r:199,g:175,b:165},{temp:94,r:202,g:185,b:177},{temp:95,r:202,g:189,b:179},{temp:96,r:220,g:215,b:184},{temp:97,r:225,g:220,b:193},{temp:98,r:216,g:206,b:208},{temp:99,r:237,g:236,b:214},{temp:100,r:223,g:220,b:215},{temp:101,r:222,g:215,b:215},{temp:102,r:215,g:212,b:192},{temp:103,r:206,g:195,b:191},{temp:104,r:200,g:189,b:185},{temp:105,r:189,g:182,b:176},{temp:106,r:182,g:172,b:169},{temp:107,r:177,g:166,b:162},{temp:108,r:164,g:162,b:159},{temp:109,r:156,g:153,b:153},{temp:110,r:146,g:145,b:143},{temp:111,r:141,g:139,b:136},{temp:112,r:133,g:131,b:130},{temp:113,r:122,g:121,b:119},{temp:114,r:117,g:116,b:114},{temp:115,r:112,g:111,b:109},{temp:116,r:100,g:98,b:97},{temp:117,r:96,g:96,b:94},{temp:118,r:86,g:88,b:85},{temp:119,r:77,g:80,b:77},{temp:120,r:70,g:70,b:70}
+    ];
+    // Fetch last 24h data
+    async function fetchTempData() {
+      const now = Math.floor(Date.now() / 1000);
+      const start = now - 86400;
+      const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
+        `?time_start=${start}&time_end=${now}&format=csv&api_key=${API_KEY}`;
+      const resp = await fetch(url);
+      const text = await resp.text();
+      
+      // Parse CSV manually
+      const lines = text.trim().split("\n");
+
+      // Headers with quotes removed (not used directly but kept for clarity)
+      const headers = lines[0].split(",").map(h => h.replace(/^'+|'+$/g, ''));
+
+      // Indices
+      const tempIdx = 10; // column containing temp in C
+      const tsIdx = 3;
+
+      // Rows
+      const data = lines.slice(1).map(line => {
+        const cols = line.split(",").map(c => c.replace(/^'+|'+$/g, ''));
+        return {
+          ts: parseInt(cols[tsIdx]),
+          tempF: parseFloat(cToF(parseFloat(cols[tempIdx])))
+        };
+      });
+      
+      return data;
+    }
+    // Update dashboard
+    async function updateDashboard() {
+      const data = await fetchTempData();
+      if (!data.length) return;
+      // Update current temp + time, and compute 5min trend
+      const latest = data[data.length - 1];
+      const currentTemp = latest.tempF;
+      const currentTimeStr = new Date(latest.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const nowTs = latest.ts;
+      const fivePast = data.find(d => d.ts >= nowTs - 5 * 60) || data[0];
+      const delta5 = (currentTemp - fivePast.tempF);
+      let trendChar = '→';
+      let trendClass = 'trend-flat';
+      if (delta5 > 0.1) { trendChar = '▲'; trendClass = 'trend-up'; }
+      else if (delta5 < -0.1) { trendChar = '▼'; trendClass = 'trend-down'; }
+
+      // color current temp using a temperature colormap
+      function tempToColor(temp){
+        // use lookup map for accurate colors
+        const t = Math.round(temp);
+        if (t <= tempColorMap[0].temp) {
+          const c = tempColorMap[0];
+          return `rgb(${c.r},${c.g},${c.b})`;
+        }
+        if (t >= tempColorMap[tempColorMap.length-1].temp) {
+          const c = tempColorMap[tempColorMap.length-1];
+          return `rgb(${c.r},${c.g},${c.b})`;
+        }
+        // binary search nearest entries
+        let lo=0, hi=tempColorMap.length-1;
+        while(lo<=hi){
+          const mid=Math.floor((lo+hi)/2);
+          if(tempColorMap[mid].temp===t){
+            const c=tempColorMap[mid];
+            return `rgb(${c.r},${c.g},${c.b})`;
+          }
+          if(tempColorMap[mid].temp < t) lo=mid+1;
+          else hi=mid-1;
+        }
+        const c1=tempColorMap[hi], c2=tempColorMap[lo];
+        const frac=(t-c1.temp)/(c2.temp-c1.temp);
+        const r=Math.round(c1.r+frac*(c2.r-c1.r));
+        const g=Math.round(c1.g+frac*(c2.g-c1.g));
+        const b=Math.round(c1.b+frac*(c2.b-c1.b));
+        return `rgb(${r},${g},${b})`;
+      }
+
+      function deltaToColor(delta){
+        const maxD = 10; // °F for saturation scale
+        const mag = Math.min(maxD, Math.abs(delta));
+        const sat = Math.round((mag / maxD) * 90);
+        if (Math.abs(delta) < 0.075) return 'var(--muted)';
+        if (delta > 0){ return `hsl(0, ${sat}%, 52%)`; } // red
+        return `hsl(220, ${sat}%, 52%)`; // blue
+      }
+
+      const currentColor = tempToColor(currentTemp);
+      document.getElementById("current-temp").innerHTML = `<div class="temp-value" style="color:${currentColor}"><span class="trend ${trendClass}">${trendChar}</span>${currentTemp.toFixed(1)}°F</div><div class="temp-time">Observed: ${currentTimeStr}</div>`;
+
+      // helper to format left label
+      function formatLabel(min){
+        if (min >= 1440) return (min/1440) + 'd';
+        if (min >= 60) return (min/60) + 'h';
+        return min + 'm';
+      }
+
+      // Update delta boxes to: left = minutes + time, right = big delta + temp
+      const deltaBoxes = document.querySelectorAll('.delta-box');
+      deltaBoxes.forEach(box => {
+        const minutes = parseInt(box.dataset.minutes);
+        const targetTs = nowTs - minutes * 60;
+        const past = data.find(d => d.ts >= targetTs) || data[0];
+        const delta = (currentTemp - past.tempF).toFixed(1);
+        const sign = delta >= 0 ? '+' : '';
+        const pastTime = new Date(past.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const pastTemp = past.tempF.toFixed(1);
+        const label = formatLabel(minutes);
+        box.innerHTML = `
+          <div class="delta-left">
+            <div class="delta-min">${label}</div>
+            <div class="delta-min-time">${pastTime}</div>
+          </div>
+          <div class="delta-main">
+            <div class="delta-amount" style="color:${deltaToColor(parseFloat(delta))};">${sign}${delta}°F</div>
+            <div class="delta-temp">${pastTemp}°F</div>
+          </div>
+        `;
+      });
+      // Plotly graph
+      const times = data.map(d => new Date(d.ts * 1000));
+      const temps = data.map(d => d.tempF);
+
+      // build color array depending on selected mode
+      const colorMode = document.getElementById('color-mode')?.value || 'temp';
+      const deltaWindow = parseInt(document.getElementById('delta-window')?.value || '5');
+
+      // compute per-point delta for chosen window
+      const pointColors = [];
+      for (let i=0;i<data.length;i++){
+        const t = temps[i];
+        if (colorMode === 'temp'){
+          pointColors.push(tempToColor(t));
+        } else {
+          // find past point index >= ts - deltaWindow*60
+          const targetTs = data[i].ts - deltaWindow*60;
+          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const dlt = t - past.tempF;
+          pointColors.push(deltaToColor(dlt));
+        }
+      }
+
+      Plotly.newPlot('temp-graph', [{
+        x: times,
+        y: temps,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: {
+          color: '#2b2f33',
+          width: 2
+        },
+        marker: {
+          size: 6,
+          color: pointColors
+        }
+      }], {
+        margin: { t: 30, r: 30, l: 50, b: 50 },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        font: { color: '#e0e0e0' },
+        xaxis: { title: 'Time' },
+        yaxis: { title: 'Temperature °F' }
+      }, { responsive: true });
+    }
+    // Fullscreen toggle
+    function toggleFullscreen() {
+      const container = document.getElementById('temp-graph-container');
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => alert(err));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+    // Initial load
+    updateDashboard();
+    // replot when color mode or window changes
+    document.getElementById('color-mode').addEventListener('change', updateDashboard);
+    document.getElementById('delta-window').addEventListener('change', updateDashboard);
+    // Optional: refresh every 5 minutes
+    setInterval(updateDashboard, 60 * 1000);
+  </script>
+
+</body>
+
+</html>
