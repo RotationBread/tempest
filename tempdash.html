@@ -176,6 +176,7 @@
           <select id="color-mode" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:700;">
             <option value="temp">Temp color</option>
             <option value="delta">Delta color</option>
+            <option value="trend">Trend color</option>
           </select>
           <select id="delta-window" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             <option value="1">1m</option>
@@ -322,6 +323,9 @@
       let trendClass = 'trend-flat';
       if (delta5 > 0.1) { trendChar = '▲'; trendClass = 'trend-up'; }
       else if (delta5 < -0.1) { trendChar = '▼'; trendClass = 'trend-down'; }
+      // read color mode controls early so current color can respect it
+      const colorMode = document.getElementById('color-mode')?.value || 'temp';
+      const deltaWindow = parseInt(document.getElementById('delta-window')?.value || '5');
 
       function tempToColor(temp){
         const t = Math.round(temp);
@@ -373,7 +377,22 @@
         return `hsl(220, ${sat}%, 52%)`;
       }
 
-      const currentColor = tempToColor(currentTemp);
+      let currentColor;
+      if (colorMode === 'temp') {
+        currentColor = tempToColor(currentTemp);
+      } else if (colorMode === 'delta') {
+        currentColor = deltaToColor(delta5, deltaWindow);
+      } else if (colorMode === 'trend') {
+        // look back 10 minutes for trend
+        const targetTs = nowTs - 10 * 60;
+        const past10 = fullData.find(d => d.ts >= targetTs) || fullData[0];
+        const diff10 = currentTemp - past10.tempF;
+        if (diff10 > 0) currentColor = 'red';
+        else if (diff10 < 0) currentColor = 'blue';
+        else currentColor = 'grey';
+      } else {
+        currentColor = tempToColor(currentTemp);
+      }
       document.getElementById("current-temp").innerHTML = `<div class="temp-value" style="color:${currentColor}"><span class="trend ${trendClass}">${trendChar}</span>${currentTemp.toFixed(1)}°F</div><div class="temp-time">Observed: ${currentTimeStr}</div>`;
 
       function formatLabel(min){
@@ -427,19 +446,33 @@
       const times = data.map(d => new Date(d.ts * 1000));
       const temps = data.map(d => d.tempF);
 
-      const colorMode = document.getElementById('color-mode')?.value || 'temp';
-      const deltaWindow = parseInt(document.getElementById('delta-window')?.value || '5');
 
       const pointColors = [];
       for (let i=0;i<data.length;i++){
         const t = temps[i];
         if (colorMode === 'temp'){
           pointColors.push(tempToColor(t));
-        } else {
+        } else if (colorMode === 'delta') {
           const targetTs = data[i].ts - deltaWindow*60;
           let past = data.find(d => d.ts >= targetTs) || data[0];
           const dlt = t - past.tempF;
           pointColors.push(deltaToColor(dlt, deltaWindow));
+        } else if (colorMode === 'trend') {
+          // use a fixed 10‑minute window to determine rising/ falling/flat
+          const trendWindow = 30 * 60; // seconds
+          const targetTs = data[i].ts - trendWindow;
+          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const dlt = t - past.tempF;
+          if (dlt > 0) {
+            pointColors.push('red');
+          } else if (dlt < 0) {
+            pointColors.push('blue');
+          } else {
+            pointColors.push('grey');
+          }
+        } else {
+          // fallback to temperature coloring
+          pointColors.push(tempToColor(t));
         }
       }
 
