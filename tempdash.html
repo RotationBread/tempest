@@ -214,14 +214,14 @@
             <option value="delta">Delta color</option>
             <option value="trend">Trend color</option>
           </select>
-          <select id="delta-window" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+          <div id="delta-window"><select id="delta-window" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             <option value="1">1m</option>
             <option value="5" selected>5m</option>
             <option value="15">15m</option>
             <option value="30">30m</option>
             <option value="60">1h</option>
             <option value="180">3h</option>
-          </select>
+          </select></div>
           <!-- new controls for graph range -->
           <label style="color:var(--muted);font-weight:600">Graph Range:</label>
           <input type="number" id="range-value" min="1" value="24" style="width:60px;border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
@@ -232,28 +232,37 @@
           </select>
           <button id="apply-range" style="margin-left:4px;padding:6px 10px;font-weight:600;">Apply</button>
           <!-- forecast toggle & hour limit -->
+          <!-- forecast toggle -->
           <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
             <input type="checkbox" id="show-forecast" style="margin-right:4px;">
             Forecast
           </label>
-          <label style="color:var(--muted);font-weight:600;margin-left:4px; display:flex; align-items:center;">
+          <!-- wrap hour limit so we can hide it when forecast is off -->
+          <span id="forecast-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
             <input type="number" id="forecast-hours" min="1" max="48" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             h
-          </label>
+          </span>
           <!-- forecast threshold toggle & degree input -->
-          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+          <span id="forecast-threshold-checkbox-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
             <input type="checkbox" id="use-forecast-threshold" style="margin-right:4px;">
             Threshold
-          </label>
-          <label style="color:var(--muted);font-weight:600;margin-left:4px; display:flex; align-items:center;">
+          </span>
+          <span id="forecast-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
             <input type="number" id="forecast-threshold" min="-100" max="150" value="32" step="0.5" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
             °F
+          </span>
+          <!-- checkbox to control start/end fields -->
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="show-range-fields" style="margin-right:4px;">
+            Show range
           </label>
-          <!-- start/end date-time selectors -->
-          <label style="color:var(--muted);font-weight:600;margin-left:8px;">Start:</label>
-          <input type="datetime-local" id="start-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
-          <label style="color:var(--muted);font-weight:600;">End:</label>
-          <input type="datetime-local" id="end-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+          <!-- start/end date-time selectors wrapped so they can be hidden -->
+          <span id="range-fields" style="display:none; align-items:center;">
+            <label style="color:var(--muted);font-weight:600;margin-left:8px;">Start:</label>
+            <input type="datetime-local" id="start-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <label style="color:var(--muted);font-weight:600;">End:</label>
+            <input type="datetime-local" id="end-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+          </span>
         </div>
         <div id="temp-graph"></div>
       </div>
@@ -689,8 +698,49 @@
     }
     // Initial load
     updateDashboard();
+    // set initial visibility for controls
+    updateForecastControls();
+    updateThresholdControls();
+    updateRangeFieldsVisibility();
+
+    function deltaColor() {
+      var colormode = document.getElementById("color-mode");
+      var deltaWindow = document.getElementById("delta-window");
+
+      if (colormode.value == "delta") {
+        deltaWindow.style.display = "block";
+        console.log("hello")
+      } else {
+        deltaWindow.style.display = "none"; // or whatever default you want\
+      }
+    }
+
+    deltaColor();
+
+    // manage visibility of forecast-related controls
+    function updateForecastControls() {
+      const showFc = document.getElementById('show-forecast').checked;
+      document.getElementById('forecast-hours-wrapper').style.display = showFc ? 'flex' : 'none';
+      document.getElementById('forecast-threshold-checkbox-wrapper').style.display = showFc ? 'flex' : 'none';
+      // threshold value visibility also depends on threshold checkbox
+      updateThresholdControls();
+    }
+
+    // show/hide threshold number input based on checkbox and forecast visibility
+    function updateThresholdControls() {
+      const useThresh = document.getElementById('use-forecast-threshold').checked;
+      const showFc = document.getElementById('show-forecast').checked;
+      document.getElementById('forecast-threshold-wrapper').style.display = (useThresh && showFc) ? 'flex' : 'none';
+      document.getElementById('forecast-threshold').disabled = !useThresh;
+    }
+
+    function updateRangeFieldsVisibility() {
+      const showRange = document.getElementById('show-range-fields').checked;
+      document.getElementById('range-fields').style.display = showRange ? 'flex' : 'none';
+    }
     // replot when color mode or window changes
     document.getElementById('color-mode').addEventListener('change', updateDashboard);
+    document.getElementById('color-mode').addEventListener('change', deltaColor);
     document.getElementById('delta-window').addEventListener('change', updateDashboard);
     document.getElementById('range-value').addEventListener('change', updateDashboard);
     document.getElementById('range-units').addEventListener('change', updateDashboard);
@@ -698,13 +748,16 @@
     document.getElementById('end-dt').addEventListener('change', updateDashboard);
     document.getElementById('apply-range').addEventListener('click', updateDashboard);
     document.getElementById('show-forecast').addEventListener('change', updateDashboard);
+    document.getElementById('show-forecast').addEventListener('change', updateForecastControls);
     document.getElementById('forecast-hours').addEventListener('change', updateDashboard);
-    // Threshold checkbox toggle
     document.getElementById('use-forecast-threshold').addEventListener('change', (e) => {
-      document.getElementById('forecast-threshold').disabled = !e.target.checked;
+      updateThresholdControls();
       updateDashboard();
     });
     document.getElementById('forecast-threshold').addEventListener('change', updateDashboard);
+    document.getElementById('show-range-fields').addEventListener('change', () => {
+      updateRangeFieldsVisibility();
+    });
     // Optional: refresh every 5 minutes
     setInterval(updateDashboard, 60 * 1000);
   </script>
