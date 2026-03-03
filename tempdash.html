@@ -240,6 +240,15 @@
             <input type="number" id="forecast-hours" min="1" max="48" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             h
           </label>
+          <!-- forecast threshold toggle & degree input -->
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="use-forecast-threshold" style="margin-right:4px;">
+            Threshold
+          </label>
+          <label style="color:var(--muted);font-weight:600;margin-left:4px; display:flex; align-items:center;">
+            <input type="number" id="forecast-threshold" min="-100" max="150" value="32" step="0.5" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
+            °F
+          </label>
           <!-- start/end date-time selectors -->
           <label style="color:var(--muted);font-weight:600;margin-left:8px;">Start:</label>
           <input type="datetime-local" id="start-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
@@ -625,10 +634,28 @@
           }
           const obsTemp = obsMatch ? obsMatch.tempF : temps[temps.length-1];
           const offset = obsTemp - firstFc.tempF;
-          // limit number of hours according to user input
-          const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
-          const pointsLimit = hoursLimit * 4; // 4 samples per hour
-          const limited = lastForecastData.slice(0, pointsLimit);
+          
+          // Check if using threshold mode
+          const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+          let limited;
+          if (useThreshold) {
+            const threshold = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
+            // Find the index where temperature passes the threshold
+            let thresholdIndex = lastForecastData.length; // default to all data
+            for (let i = 0; i < lastForecastData.length; i++) {
+              const adjustedTemp = lastForecastData[i].tempF + offset;
+              if (adjustedTemp >= threshold) {
+                thresholdIndex = i + 1; // include the point that passes threshold
+                break;
+              }
+            }
+            limited = lastForecastData.slice(0, thresholdIndex);
+          } else {
+            // limit number of hours according to user input
+            const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+            const pointsLimit = hoursLimit * 4; // 4 samples per hour
+            limited = lastForecastData.slice(0, pointsLimit);
+          }
           const fcTimes = limited.map(d => new Date(d.ts * 1000));
           const fcTemps = limited.map(d => d.tempF + offset);
           traces.push({
@@ -637,7 +664,6 @@
             type: 'scatter',
             mode: 'lines',
             line: { color: 'grey', width: 2, dash: 'dash' },
-            hoverinfo: 'none',
             name: 'Forecast'
           });
         }
@@ -673,6 +699,12 @@
     document.getElementById('apply-range').addEventListener('click', updateDashboard);
     document.getElementById('show-forecast').addEventListener('change', updateDashboard);
     document.getElementById('forecast-hours').addEventListener('change', updateDashboard);
+    // Threshold checkbox toggle
+    document.getElementById('use-forecast-threshold').addEventListener('change', (e) => {
+      document.getElementById('forecast-threshold').disabled = !e.target.checked;
+      updateDashboard();
+    });
+    document.getElementById('forecast-threshold').addEventListener('change', updateDashboard);
     // Optional: refresh every 5 minutes
     setInterval(updateDashboard, 60 * 1000);
   </script>
