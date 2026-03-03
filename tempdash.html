@@ -144,10 +144,46 @@
     }
 
     button:hover { color: var(--accent); border-color: rgba(255,171,64,0.25); }
+
+    /* Clock styling */
+    #clock-container {
+      position: fixed;
+      top: 15px;
+      right: 50%;
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
+      border-radius: 12px;
+      padding: 12px 18px;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+      z-index: 1000;
+    }
+
+    #clock-display {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: 'Courier New', monospace;
+      letter-spacing: 2px;
+    }
+
+    .clock-label {
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-top: 4px;
+      text-align: center;
+      letter-spacing: 1px;
+    }
   </style>
 </head>
 
 <body>
+
+  <!-- Clock Display -->
+  <div id="clock-container">
+    <div id="clock-display">--:--:--</div>
+    <div class="clock-label">LOCAL TIME</div>
+  </div>
 
   <div id="dashboard">
     <!-- Left: Temperature changes -->
@@ -195,6 +231,15 @@
             <option value="days">days</option>
           </select>
           <button id="apply-range" style="margin-left:4px;padding:6px 10px;font-weight:600;">Apply</button>
+          <!-- forecast toggle & hour limit -->
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="show-forecast" style="margin-right:4px;">
+            Forecast
+          </label>
+          <label style="color:var(--muted);font-weight:600;margin-left:4px; display:flex; align-items:center;">
+            <input type="number" id="forecast-hours" min="1" max="48" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            h
+          </label>
           <!-- start/end date-time selectors -->
           <label style="color:var(--muted);font-weight:600;margin-left:8px;">Start:</label>
           <input type="datetime-local" id="start-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
@@ -211,6 +256,19 @@
     const API_KEY = "4ca9b677-d072-439f-8920-22ea9c630dd8";
     // Convert C → F (returns number)
     const cToF = c => (c * 9 / 5 + 32);
+
+    // Update clock every second
+    function updateClock() {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('clock-display').textContent = `${hours}:${minutes}:${seconds}`;
+    }
+
+    // Update clock immediately and then every second
+    updateClock();
+    setInterval(updateClock, 1000);
     // temperature color map from CSV
     const tempColorMap = [
       {temp:-61,r:44,g:90,b:114},{temp:-60,r:44,g:91,b:123},{temp:-59,r:54,g:101,b:128},{temp:-58,r:66,g:112,b:139},{temp:-57,r:73,g:124,b:143},{temp:-56,r:81,g:123,b:147},{temp:-55,r:84,g:127,b:146},{temp:-54,r:87,g:133,b:147},{temp:-53,r:95,g:148,b:161},{temp:-52,r:107,g:156,b:167},{temp:-51,r:110,g:161,b:169},{temp:-50,r:120,g:167,b:175},{temp:-49,r:125,g:177,b:181},{temp:-48,r:131,g:185,b:185},{temp:-47,r:135,g:187,b:188},{temp:-46,r:153,g:203,b:202},{temp:-45,r:154,g:203,b:201},{temp:-44,r:160,g:206,b:209},{temp:-43,r:170,g:220,b:219},{temp:-42,r:178,g:225,b:221},{temp:-41,r:177,g:233,b:224},{temp:-40,r:180,g:231,b:225},{temp:-39,r:177,g:233,b:223},{temp:-38,r:171,g:222,b:219},{temp:-37,r:170,g:216,b:216},{temp:-36,r:173,g:214,b:217},{temp:-35,r:168,g:209,b:217},{temp:-34,r:169,g:207,b:215},{temp:-33,r:165,g:195,b:217},{temp:-32,r:170,g:199,b:219},{temp:-31,r:162,g:193,b:213},{temp:-30,r:164,g:186,b:215},{temp:-29,r:163,g:184,b:213},{temp:-28,r:154,g:168,b:201},{temp:-27,r:158,g:171,b:205},{temp:-26,r:154,g:163,b:206},{temp:-25,r:152,g:153,b:200},{temp:-24,r:151,g:153,b:202},{temp:-23,r:149,g:149,b:199},{temp:-22,r:151,g:147,b:197},{temp:-21,r:145,g:129,b:190},{temp:-20,r:144,g:127,b:187},{temp:-19,r:147,g:126,b:194},{temp:-18,r:145,g:127,b:189},{temp:-17,r:147,g:122,b:193},{temp:-16,r:138,g:105,b:186},{temp:-15,r:138,g:103,b:185},{temp:-14,r:140,g:99,b:182},{temp:-13,r:140,g:98,b:183},{temp:-12,r:130,g:88,b:177},{temp:-11,r:135,g:90,b:182},{temp:-10,r:131,g:78,b:183},{temp:-9,r:126,g:73,b:178},{temp:-8,r:131,g:71,b:175},{temp:-7,r:127,g:60,b:174},{temp:-6,r:129,g:59,b:173},{temp:-5,r:128,g:54,b:173},{temp:-4,r:122,g:42,b:168},{temp:-3,r:121,g:38,b:170},{temp:-2,r:120,g:39,b:169},{temp:-1,r:121,g:38,b:172},{temp:0,r:157,g:64,b:173},{temp:1,r:156,g:64,b:172},{temp:2,r:170,g:86,b:185},{temp:3,r:165,g:97,b:182},{temp:4,r:166,g:103,b:183},{temp:5,r:174,g:113,b:189},{temp:6,r:181,g:128,b:198},{temp:7,r:184,g:145,b:203},{temp:8,r:194,g:162,b:213},{temp:9,r:194,g:165,b:210},{temp:10,r:190,g:178,b:213},{temp:11,r:191,g:182,b:203},{temp:12,r:206,g:208,b:226},{temp:13,r:210,g:219,b:229},{temp:14,r:211,g:221,b:229},{temp:15,r:223,g:232,b:237},{temp:16,r:210,g:222,b:232},{temp:17,r:192,g:212,b:223},{temp:18,r:184,g:207,b:230},{temp:19,r:177,g:201,b:225},{temp:20,r:165,g:191,b:216},{temp:21,r:154,g:174,b:209},{temp:22,r:135,g:163,b:203},{temp:23,r:111,g:148,b:204},{temp:24,r:109,g:148,b:205},{temp:25,r:104,g:143,b:208},{temp:26,r:84,g:127,b:193},{temp:27,r:71,g:120,b:189},{temp:28,r:67,g:116,b:185},{temp:29,r:56,g:104,b:186},{temp:30,r:38,g:89,b:175},{temp:31,r:38,g:89,b:178},{temp:32,r:19,g:68,b:84},{temp:33,r:27,g:76,b:88},{temp:34,r:44,g:85,b:94},{temp:35,r:55,g:97,b:100},{temp:36,r:69,g:108,b:103},{temp:37,r:82,g:120,b:109},{temp:38,r:95,g:129,b:113},{temp:39,r:108,g:140,b:117},{temp:40,r:122,g:150,b:125},{temp:41,r:136,g:160,b:128},{temp:42,r:150,g:170,b:133},{temp:43,r:162,g:181,b:140},{temp:44,r:175,g:191,b:144},{temp:45,r:189,g:200,b:150},{temp:46,r:204,g:210,b:154},{temp:47,r:217,g:223,b:161},{temp:48,r:227,g:231,b:159},{temp:49,r:244,g:242,b:165},{temp:50,r:247,g:238,b:159},{temp:51,r:239,g:225,b:152},{temp:52,r:234,g:213,b:145},{temp:53,r:225,g:200,b:138},{temp:54,r:217,g:188,b:128},{temp:55,r:210,g:175,b:119},{temp:56,r:200,g:163,b:110},{temp:57,r:191,g:150,b:103},{temp:58,r:186,g:137,b:94},{temp:59,r:179,g:124,b:83},{temp:60,r:169,g:113,b:77},{temp:61,r:162,g:100,b:69},{temp:62,r:156,g:88,b:61},{temp:63,r:145,g:76,b:53},{temp:64,r:140,g:62,b:41},{temp:65,r:130,g:50,b:33},{temp:66,r:123,g:38,b:27},{temp:67,r:115,g:25,b:17},{temp:68,r:108,g:13,b:9},{temp:69,r:101,g:0,b:0},{temp:70,r:95,g:0,b:0},{temp:71,r:98,g:5,b:5},{temp:72,r:102,g:10,b:13},{temp:73,r:108,g:14,b:20},{temp:74,r:112,g:19,b:27},{temp:75,r:116,g:24,b:35},{temp:76,r:120,g:29,b:45},{temp:77,r:125,g:34,b:51},{temp:78,r:130,g:38,b:57},{temp:79,r:134,g:44,b:64},{temp:80,r:115,g:55,b:45},{temp:81,r:124,g:63,b:53},{temp:82,r:127,g:73,b:63},{temp:83,r:135,g:82,b:72},{temp:84,r:142,g:92,b:83},{temp:85,r:148,g:101,b:91},{temp:86,r:153,g:111,b:99},{temp:87,r:162,g:119,b:110},{temp:88,r:166,g:130,b:120},{temp:89,r:175,g:138,b:128},{temp:90,r:181,g:146,b:138},{temp:91,r:189,g:155,b:144},{temp:92,r:193,g:166,b:155},{temp:93,r:199,g:175,b:165},{temp:94,r:202,g:185,b:177},{temp:95,r:202,g:189,b:179},{temp:96,r:220,g:215,b:184},{temp:97,r:225,g:220,b:193},{temp:98,r:216,g:206,b:208},{temp:99,r:237,g:236,b:214},{temp:100,r:223,g:220,b:215},{temp:101,r:222,g:215,b:215},{temp:102,r:215,g:212,b:192},{temp:103,r:206,g:195,b:191},{temp:104,r:200,g:189,b:185},{temp:105,r:189,g:182,b:176},{temp:106,r:182,g:172,b:169},{temp:107,r:177,g:166,b:162},{temp:108,r:164,g:162,b:159},{temp:109,r:156,g:153,b:153},{temp:110,r:146,g:145,b:143},{temp:111,r:141,g:139,b:136},{temp:112,r:133,g:131,b:130},{temp:113,r:122,g:121,b:119},{temp:114,r:117,g:116,b:114},{temp:115,r:112,g:111,b:109},{temp:116,r:100,g:98,b:97},{temp:117,r:96,g:96,b:94},{temp:118,r:86,g:88,b:85},{temp:119,r:77,g:80,b:77},{temp:120,r:70,g:70,b:70}
@@ -307,6 +365,30 @@
       }
       return all;
     }
+
+    // --- forecast support --------------------------------------------------
+    let lastForecastData = null;
+    let lastForecastFetchTs = 0; // ms since epoch
+
+    async function fetchForecastData() {
+      // Open-Meteo request returning 15‑min resolution forecast
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&minutely_15=temperature_2m&timezone=America%2FNew_York&temperature_unit=fahrenheit&forecast_minutely_15=96";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.minutely_15 || !j.minutely_15.time) return [];
+      const times = j.minutely_15.time;
+      const temps = j.minutely_15.temperature_2m;
+      const result = [];
+      for (let i = 0; i < times.length; i++) {
+        result.push({
+          ts: Math.floor(new Date(times[i]).getTime() / 1000),
+          tempF: parseFloat(temps[i])
+        });
+      }
+      return result;
+    }
+
     // Update dashboard
     async function updateDashboard() {
       // always fetch 24h of data for current/delta display
@@ -328,7 +410,7 @@
       const deltaWindow = parseInt(document.getElementById('delta-window')?.value || '5');
 
       function tempToColor(temp){
-        const t = Math.round(temp);
+        const t = Math.floor(temp);
         if (t <= tempColorMap[0].temp) {
           const c = tempColorMap[0];
           return `rgb(${c.r},${c.g},${c.b})`;
@@ -522,6 +604,45 @@
         marker: { size: 6, color: pointColors }
       });
 
+      // optionally add forecast line if requested
+      const showForecast = document.getElementById('show-forecast')?.checked;
+      if (showForecast) {
+        const now = new Date();
+        const nowMs = now.getTime();
+        const minute = now.getMinutes();
+        // refresh only at 02,17,32,47 minutes past the hour or when we have no data yet
+        const needFetch = !lastForecastData || (minute % 15 === 2 && nowMs - lastForecastFetchTs > 5 * 60 * 1000);
+        if (needFetch) {
+          lastForecastData = await fetchForecastData();
+          lastForecastFetchTs = nowMs;
+        }
+        if (lastForecastData && lastForecastData.length) {
+          // align first forecast point with matching observation
+          const firstFc = lastForecastData[0];
+          let obsMatch = data.find(d => d.ts >= firstFc.ts);
+          if (!obsMatch) {
+            obsMatch = fullData.find(d => d.ts >= firstFc.ts) || fullData[fullData.length-1];
+          }
+          const obsTemp = obsMatch ? obsMatch.tempF : temps[temps.length-1];
+          const offset = obsTemp - firstFc.tempF;
+          // limit number of hours according to user input
+          const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+          const pointsLimit = hoursLimit * 4; // 4 samples per hour
+          const limited = lastForecastData.slice(0, pointsLimit);
+          const fcTimes = limited.map(d => new Date(d.ts * 1000));
+          const fcTemps = limited.map(d => d.tempF + offset);
+          traces.push({
+            x: fcTimes,
+            y: fcTemps,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'grey', width: 2, dash: 'dash' },
+            hoverinfo: 'none',
+            name: 'Forecast'
+          });
+        }
+      }
+
       Plotly.newPlot('temp-graph', traces, {
         margin: { t: 30, r: 30, l: 50, b: 50 },
         paper_bgcolor: 'transparent',
@@ -550,6 +671,8 @@
     document.getElementById('start-dt').addEventListener('change', updateDashboard);
     document.getElementById('end-dt').addEventListener('change', updateDashboard);
     document.getElementById('apply-range').addEventListener('click', updateDashboard);
+    document.getElementById('show-forecast').addEventListener('change', updateDashboard);
+    document.getElementById('forecast-hours').addEventListener('change', updateDashboard);
     // Optional: refresh every 5 minutes
     setInterval(updateDashboard, 60 * 1000);
   </script>
