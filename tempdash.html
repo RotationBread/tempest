@@ -518,7 +518,7 @@
           </div>
           <div class="delta-main">
             <div class="delta-amount" style="color:${deltaToColor(parseFloat(delta), minutes)};">${sign}${delta}°F</div>
-            <div class="delta-temp">${pastTemp}°F</div>
+            <div class="delta-temp">${pastTemp}°F --> ${currentTemp}°F</div>
           </div>
         `;
       });
@@ -652,10 +652,18 @@
             // Find the index where temperature passes the threshold
             let thresholdIndex = lastForecastData.length; // default to all data
             for (let i = 0; i < lastForecastData.length; i++) {
-              const adjustedTemp = lastForecastData[i].tempF + offset;
-              if (adjustedTemp >= threshold) {
-                thresholdIndex = i + 1; // include the point that passes threshold
-                break;
+              if (currentTemp >= threshold) {
+                const adjustedTemp = lastForecastData[i].tempF + offset;
+                if (adjustedTemp <= threshold) {
+                  thresholdIndex = i + 1; // include the point that passes threshold
+                  break;
+                }
+              } else {
+                const adjustedTemp = lastForecastData[i].tempF + offset;
+                if (adjustedTemp >= threshold) {
+                  thresholdIndex = i + 1; // include the point that passes threshold
+                  break;
+                }
               }
             }
             limited = lastForecastData.slice(0, thresholdIndex);
