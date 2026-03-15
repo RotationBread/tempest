@@ -239,7 +239,7 @@
           </label>
           <!-- wrap hour limit so we can hide it when forecast is off -->
           <span id="forecast-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
-            <input type="number" id="forecast-hours" min="1" max="48" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <input type="number" id="forecast-hours" min="1" max="5200" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             h
           </span>
           <!-- forecast threshold toggle & degree input -->
@@ -385,11 +385,17 @@
     }
 
     // --- forecast support --------------------------------------------------
-    let lastForecastData = null;
-    let lastForecastFetchTs = 0; // ms since epoch
+    let lastForecastMinutely = null;
+    let lastForecastHourlyNbm = null;
+    let lastForecastHourlyGfs = null;
+    let lastForecastHourlySeasonal = null;
+    let lastForecastFetchTsMinutely = 0; // ms since epoch
+    let lastForecastFetchTsHourlyNbm = 0; // ms since epoch
+    let lastForecastFetchTsHourlyGfs = 0; // ms since epoch
+    let lastForecastFetchTsHourlySeasonal = 0; // ms since epoch
 
     async function fetchForecastData() {
-      // Open-Meteo request returning 15‑min resolution forecast
+      // Open-Meteo request returning 15‑min resolution forecast (up to ~24h)
       const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&minutely_15=temperature_2m&timezone=America%2FNew_York&temperature_unit=fahrenheit&forecast_minutely_15=96";
       const resp = await fetch(url);
       if (!resp.ok) return [];
@@ -397,6 +403,63 @@
       if (!j.minutely_15 || !j.minutely_15.time) return [];
       const times = j.minutely_15.time;
       const temps = j.minutely_15.temperature_2m;
+      const result = [];
+      for (let i = 0; i < times.length; i++) {
+        result.push({
+          ts: Math.floor(new Date(times[i]).getTime() / 1000),
+          tempF: parseFloat(temps[i])
+        });
+      }
+      return result;
+    }
+
+    // Forecast for longer windows (beyond 24h) using hourly data (up to ~14 days)
+    async function fetchForecastDataHourlyNbm() {
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_nbm_conus&forecast_days=14&temperature_unit=fahrenheit";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) return [];
+      const times = j.hourly.time;
+      const temps = j.hourly.temperature_2m;
+      const result = [];
+      for (let i = 0; i < times.length; i++) {
+        result.push({
+          ts: Math.floor(new Date(times[i]).getTime() / 1000),
+          tempF: parseFloat(temps[i])
+        });
+      }
+      return result;
+    }
+
+    // Forecast for even longer windows (up to ~16 days) using GFS Seamless
+    async function fetchForecastDataHourlyGfs() {
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=gfs_seamless&forecast_days=16&temperature_unit=fahrenheit";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) return [];
+      const times = j.hourly.time;
+      const temps = j.hourly.temperature_2m;
+      const result = [];
+      for (let i = 0; i < times.length; i++) {
+        result.push({
+          ts: Math.floor(new Date(times[i]).getTime() / 1000),
+          tempF: parseFloat(temps[i])
+        });
+      }
+      return result;
+    }
+
+    // Forecast for even longer windows (up to ~7 months) using seasonal API
+    async function fetchForecastDataSeasonal() {
+      const url = "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_seasonal_ensemble_mean_seamless&temporal_resolution=hourly_1&forecast_days=214&temperature_unit=fahrenheit";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) return [];
+      const times = j.hourly.time;
+      const temps = j.hourly.temperature_2m;
       const result = [];
       for (let i = 0; i < times.length; i++) {
         result.push({
@@ -628,51 +691,120 @@
         const now = new Date();
         const nowMs = now.getTime();
         const minute = now.getMinutes();
+        const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+        const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+        const useHourlyForecast = useThreshold || hoursLimit > 24;
+
         // refresh only at 02,17,32,47 minutes past the hour or when we have no data yet
-        const needFetch = !lastForecastData || (minute % 15 === 2 && nowMs - lastForecastFetchTs > 5 * 60 * 1000);
-        if (needFetch) {
-          lastForecastData = await fetchForecastData();
-          lastForecastFetchTs = nowMs;
+        const needsTimeRefresh = minute % 15 === 2 && nowMs - lastForecastFetchTsMinutely > 5 * 60 * 1000;
+        const needMinutelyFetch = !lastForecastMinutely || needsTimeRefresh;
+        if (needMinutelyFetch) {
+          lastForecastMinutely = await fetchForecastData();
+          lastForecastFetchTsMinutely = nowMs;
         }
-        if (lastForecastData && lastForecastData.length) {
+
+        const minutelyData = lastForecastMinutely || [];
+        let combinedForecast = minutelyData.slice();
+
+        // If we need longer than the minutely forecast portion, append hourly data (NBM -> GFS -> Seasonal)
+        if (useHourlyForecast) {
+          const maxForecastHours = 214 * 24; // seasonal API max
+          const endTs = useThreshold
+            ? (combinedForecast[0]?.ts || nowMs / 1000) + maxForecastHours * 3600
+            : (combinedForecast[0]?.ts || nowMs / 1000) + hoursLimit * 3600;
+
+          // 1) NBM
+          const needsNbmRefresh = !lastForecastHourlyNbm || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlyNbm > 5 * 60 * 1000);
+          if (needsNbmRefresh) {
+            lastForecastHourlyNbm = await fetchForecastDataHourlyNbm();
+            lastForecastFetchTsHourlyNbm = nowMs;
+          }
+
+          if (lastForecastHourlyNbm && lastForecastHourlyNbm.length) {
+            const lastMinutelyTs = minutelyData.length ? minutelyData[minutelyData.length - 1].ts : 0;
+            const startNbmIdx = lastForecastHourlyNbm.findIndex(d => d.ts > lastMinutelyTs);
+            if (startNbmIdx >= 0) {
+              combinedForecast = combinedForecast.concat(lastForecastHourlyNbm.slice(startNbmIdx));
+            } else {
+              combinedForecast = combinedForecast.concat(lastForecastHourlyNbm);
+            }
+          }
+
+          // 2) GFS - only if needed beyond NBM
+          const lastNbmTs = combinedForecast.length ? combinedForecast[combinedForecast.length - 1].ts : 0;
+          if (endTs > lastNbmTs) {
+            const needsGfsRefresh = !lastForecastHourlyGfs || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlyGfs > 5 * 60 * 1000);
+            if (needsGfsRefresh) {
+              lastForecastHourlyGfs = await fetchForecastDataHourlyGfs();
+              lastForecastFetchTsHourlyGfs = nowMs;
+            }
+
+            if (lastForecastHourlyGfs && lastForecastHourlyGfs.length) {
+              const startGfsIdx = lastForecastHourlyGfs.findIndex(d => d.ts > lastNbmTs);
+              if (startGfsIdx >= 0) {
+                combinedForecast = combinedForecast.concat(lastForecastHourlyGfs.slice(startGfsIdx));
+              } else {
+                combinedForecast = combinedForecast.concat(lastForecastHourlyGfs);
+              }
+            }
+          }
+
+          // 3) Seasonal - only if needed beyond GFS
+          const lastGfsTs = combinedForecast.length ? combinedForecast[combinedForecast.length - 1].ts : 0;
+          if (endTs > lastGfsTs) {
+            const needsSeasonalRefresh = !lastForecastHourlySeasonal || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlySeasonal > 5 * 60 * 1000);
+            if (needsSeasonalRefresh) {
+              lastForecastHourlySeasonal = await fetchForecastDataSeasonal();
+              lastForecastFetchTsHourlySeasonal = nowMs;
+            }
+
+            if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
+              const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
+              if (startSeasonalIdx >= 0) {
+                combinedForecast = combinedForecast.concat(lastForecastHourlySeasonal.slice(startSeasonalIdx));
+              } else {
+                combinedForecast = combinedForecast.concat(lastForecastHourlySeasonal);
+              }
+            }
+          }
+        }
+
+        if (combinedForecast.length) {
           // align first forecast point with matching observation
-          const firstFc = lastForecastData[0];
+          const firstFc = combinedForecast[0];
           let obsMatch = data.find(d => d.ts >= firstFc.ts);
           if (!obsMatch) {
             obsMatch = fullData.find(d => d.ts >= firstFc.ts) || fullData[fullData.length-1];
           }
           const obsTemp = obsMatch ? obsMatch.tempF : temps[temps.length-1];
           const offset = obsTemp - firstFc.tempF;
-          
-          // Check if using threshold mode
-          const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+
           let limited;
           if (useThreshold) {
             const threshold = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
-            // Find the index where temperature passes the threshold
-            let thresholdIndex = lastForecastData.length; // default to all data
-            for (let i = 0; i < lastForecastData.length; i++) {
+            // Find the index where temperature passes the threshold and slice there
+            let thresholdIndex = combinedForecast.length;
+            for (let i = 0; i < combinedForecast.length; i++) {
+              const adjustedTemp = combinedForecast[i].tempF + offset;
               if (currentTemp >= threshold) {
-                const adjustedTemp = lastForecastData[i].tempF + offset;
                 if (adjustedTemp <= threshold) {
-                  thresholdIndex = i + 1; // include the point that passes threshold
+                  thresholdIndex = i + 1;
                   break;
                 }
               } else {
-                const adjustedTemp = lastForecastData[i].tempF + offset;
                 if (adjustedTemp >= threshold) {
-                  thresholdIndex = i + 1; // include the point that passes threshold
+                  thresholdIndex = i + 1;
                   break;
                 }
               }
             }
-            limited = lastForecastData.slice(0, thresholdIndex);
+            limited = combinedForecast.slice(0, thresholdIndex);
           } else {
-            // limit number of hours according to user input
-            const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
-            const pointsLimit = hoursLimit * 4; // 4 samples per hour
-            limited = lastForecastData.slice(0, pointsLimit);
+            // limit number of hours according to user input (time-based)
+            const endTs = firstFc.ts + hoursLimit * 3600;
+            limited = combinedForecast.filter(d => d.ts <= endTs);
           }
+
           const fcTimes = limited.map(d => new Date(d.ts * 1000));
           const fcTemps = limited.map(d => d.tempF + offset);
           traces.push({
