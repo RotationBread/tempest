@@ -415,7 +415,7 @@
 
     // Forecast for longer windows (beyond 24h) using hourly data (up to ~14 days)
     async function fetchForecastDataHourlyNbm() {
-      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_nbm_conus&forecast_days=14&temperature_unit=fahrenheit";
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_nbm_conus&forecast_days=10&temperature_unit=fahrenheit";
       const resp = await fetch(url);
       if (!resp.ok) return [];
       const j = await resp.json();
@@ -770,22 +770,59 @@
         }
 
         if (combinedForecast.length) {
-          // align first forecast point with matching observation
-          const firstFc = combinedForecast[0];
-          let obsMatch = data.find(d => d.ts >= firstFc.ts);
-          if (!obsMatch) {
-            obsMatch = fullData.find(d => d.ts >= firstFc.ts) || fullData[fullData.length-1];
-          }
-          const obsTemp = obsMatch ? obsMatch.tempF : temps[temps.length-1];
-          const offset = obsTemp - firstFc.tempF;
+          // start forecast immediately after the last observed point
+          const lastObs = data[data.length - 1];
 
+          // build segments in order: minutely, NBM, GFS, seasonal
+          const segments = [];
+
+          const startMinutelyIdx = (minutelyData || []).findIndex(d => d.ts > lastObs.ts);
+          if (startMinutelyIdx >= 0) {
+            segments.push((minutelyData || []).slice(startMinutelyIdx));
+          }
+
+          const lastMinutelyTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastObs.ts;
+
+          if (lastForecastHourlyNbm && lastForecastHourlyNbm.length) {
+            const startNbmIdx = lastForecastHourlyNbm.findIndex(d => d.ts > lastMinutelyTs);
+            if (startNbmIdx >= 0) segments.push(lastForecastHourlyNbm.slice(startNbmIdx));
+          }
+
+          const lastNbmTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastMinutelyTs;
+
+          if (lastForecastHourlyGfs && lastForecastHourlyGfs.length) {
+            const startGfsIdx = lastForecastHourlyGfs.findIndex(d => d.ts > lastNbmTs);
+            if (startGfsIdx >= 0) segments.push(lastForecastHourlyGfs.slice(startGfsIdx));
+          }
+
+          const lastGfsTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastNbmTs;
+
+          if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
+            const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
+            if (startSeasonalIdx >= 0) segments.push(lastForecastHourlySeasonal.slice(startSeasonalIdx));
+          }
+
+          // apply offsets so each segment lines up with the previous end point
+          let prevTemp = lastObs.tempF;
+          const adjustedForecast = [];
+          for (const segment of segments) {
+            if (!segment || !segment.length) continue;
+            const offset = prevTemp - segment[0].tempF;
+            for (const pt of segment) {
+              adjustedForecast.push({ ts: pt.ts, tempF: pt.tempF + offset });
+            }
+            prevTemp = adjustedForecast[adjustedForecast.length - 1].tempF;
+          }
+
+          if (!adjustedForecast.length) return;
+
+          // slice based on user settings (threshold or hours limit)
           let limited;
           if (useThreshold) {
             const threshold = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
-            // Find the index where temperature passes the threshold and slice there
-            let thresholdIndex = combinedForecast.length;
-            for (let i = 0; i < combinedForecast.length; i++) {
-              const adjustedTemp = combinedForecast[i].tempF + offset;
+            let thresholdIndex = adjustedForecast.length;
+            for (let i = 0; i < adjustedForecast.length; i++) {
+              const adjustedTemp = adjustedForecast[i].tempF;
               if (currentTemp >= threshold) {
                 if (adjustedTemp <= threshold) {
                   thresholdIndex = i + 1;
@@ -798,15 +835,14 @@
                 }
               }
             }
-            limited = combinedForecast.slice(0, thresholdIndex);
+            limited = adjustedForecast.slice(0, thresholdIndex);
           } else {
-            // limit number of hours according to user input (time-based)
-            const endTs = firstFc.ts + hoursLimit * 3600;
-            limited = combinedForecast.filter(d => d.ts <= endTs);
+            const endTs = adjustedForecast[0].ts + hoursLimit * 3600;
+            limited = adjustedForecast.filter(d => d.ts <= endTs);
           }
 
           const fcTimes = limited.map(d => new Date(d.ts * 1000));
-          const fcTemps = limited.map(d => d.tempF + offset);
+          const fcTemps = limited.map(d => d.tempF);
           traces.push({
             x: fcTimes,
             y: fcTemps,
