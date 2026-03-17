@@ -424,9 +424,11 @@
       const temps = j.hourly.temperature_2m;
       const result = [];
       for (let i = 0; i < times.length; i++) {
+        const tempVal = parseFloat(temps[i]);
+        if (isNaN(tempVal)) continue;
         result.push({
           ts: Math.floor(new Date(times[i]).getTime() / 1000),
-          tempF: parseFloat(temps[i])
+          tempF: tempVal
         });
       }
       return result;
@@ -443,9 +445,11 @@
       const temps = j.hourly.temperature_2m;
       const result = [];
       for (let i = 0; i < times.length; i++) {
+        const tempVal = parseFloat(temps[i]);
+        if (isNaN(tempVal)) continue;
         result.push({
           ts: Math.floor(new Date(times[i]).getTime() / 1000),
-          tempF: parseFloat(temps[i])
+          tempF: tempVal
         });
       }
       return result;
@@ -455,18 +459,34 @@
     async function fetchForecastDataSeasonal() {
       const url = "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_seasonal_ensemble_mean_seamless&temporal_resolution=hourly_1&forecast_days=214&temperature_unit=fahrenheit";
       const resp = await fetch(url);
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        console.log("Seasonal API fetch failed:", resp.status);
+        return [];
+      }
       const j = await resp.json();
-      if (!j.hourly || !j.hourly.time) return [];
+      console.log("Seasonal API response:", j);
+      if (!j.hourly || !j.hourly.time) {
+        console.log("Seasonal API: missing hourly/time data");
+        return [];
+      }
       const times = j.hourly.time;
       const temps = j.hourly.temperature_2m;
+      console.log(`Seasonal API: got ${times.length} time points, ${temps.length} temps`);
       const result = [];
       for (let i = 0; i < times.length; i++) {
+        const tempVal = parseFloat(temps[i]);
+        // Skip invalid temperature values
+        if (isNaN(tempVal)) {
+          console.log(`Seasonal: skipping point ${i} with NaN temp`);
+          continue;
+        }
         result.push({
           ts: Math.floor(new Date(times[i]).getTime() / 1000),
-          tempF: parseFloat(temps[i])
+          tempF: tempVal
         });
       }
+      console.log("Seasonal API result (filtered):", result.slice(0, 5), "...", result.slice(-5));
+      console.log(`Seasonal: after filtering NaN, reduced from ${times.length} to ${result.length} points`);
       return result;
     }
 
@@ -694,6 +714,7 @@
         const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
         const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
         const useHourlyForecast = useThreshold || hoursLimit > 24;
+        console.log("Forecast check: useThreshold=", useThreshold, "hoursLimit=", hoursLimit, "useHourlyForecast=", useHourlyForecast);
 
         // refresh only at 02,17,32,47 minutes past the hour or when we have no data yet
         const needsTimeRefresh = minute % 15 === 2 && nowMs - lastForecastFetchTsMinutely > 5 * 60 * 1000;
@@ -751,14 +772,19 @@
 
           // 3) Seasonal - only if needed beyond GFS
           const lastGfsTs = combinedForecast.length ? combinedForecast[combinedForecast.length - 1].ts : 0;
+          console.log("Checking seasonal: endTs=", endTs, "lastGfsTs=", lastGfsTs, "need seasonal?", endTs > lastGfsTs);
           if (endTs > lastGfsTs) {
             const needsSeasonalRefresh = !lastForecastHourlySeasonal || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlySeasonal > 5 * 60 * 1000);
+            console.log("Seasonal refresh needed:", needsSeasonalRefresh, "has cache:", !!lastForecastHourlySeasonal);
             if (needsSeasonalRefresh) {
+              console.log("Fetching seasonal data...");
               lastForecastHourlySeasonal = await fetchForecastDataSeasonal();
               lastForecastFetchTsHourlySeasonal = nowMs;
+              console.log("Seasonal fetch complete, got:", lastForecastHourlySeasonal.length, "points");
             }
 
             if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
+              console.log("Adding seasonal to combinedForecast");
               const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
               if (startSeasonalIdx >= 0) {
                 combinedForecast = combinedForecast.concat(lastForecastHourlySeasonal.slice(startSeasonalIdx));
@@ -776,45 +802,81 @@
           // build segments in order: minutely, NBM, GFS, seasonal
           const segments = [];
 
-          const startMinutelyIdx = (minutelyData || []).findIndex(d => d.ts > lastObs.ts);
-          if (startMinutelyIdx >= 0) {
-            segments.push((minutelyData || []).slice(startMinutelyIdx));
+          // Include all minutely data from the start for verification
+          if (minutelyData && minutelyData.length > 0) {
+            segments.push(minutelyData.slice());
           }
 
           const lastMinutelyTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastObs.ts;
 
           if (lastForecastHourlyNbm && lastForecastHourlyNbm.length) {
             const startNbmIdx = lastForecastHourlyNbm.findIndex(d => d.ts > lastMinutelyTs);
-            if (startNbmIdx >= 0) segments.push(lastForecastHourlyNbm.slice(startNbmIdx));
+            if (startNbmIdx >= 0) {
+              segments.push(lastForecastHourlyNbm.slice(startNbmIdx));
+            } else {
+              segments.push(lastForecastHourlyNbm.slice());
+            }
           }
 
           const lastNbmTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastMinutelyTs;
 
           if (lastForecastHourlyGfs && lastForecastHourlyGfs.length) {
             const startGfsIdx = lastForecastHourlyGfs.findIndex(d => d.ts > lastNbmTs);
-            if (startGfsIdx >= 0) segments.push(lastForecastHourlyGfs.slice(startGfsIdx));
+            if (startGfsIdx >= 0) {
+              segments.push(lastForecastHourlyGfs.slice(startGfsIdx));
+            } else {
+              segments.push(lastForecastHourlyGfs.slice());
+            }
           }
 
           const lastGfsTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastNbmTs;
 
           if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
             const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
-            if (startSeasonalIdx >= 0) segments.push(lastForecastHourlySeasonal.slice(startSeasonalIdx));
+            console.log("Seasonal segment: lastGfsTs=", lastGfsTs, "startSeasonalIdx=", startSeasonalIdx, "total seasonal points=", lastForecastHourlySeasonal.length);
+            if (startSeasonalIdx >= 0) {
+              console.log("Adding seasonal data from index:", startSeasonalIdx);
+              segments.push(lastForecastHourlySeasonal.slice(startSeasonalIdx));
+            } else {
+              console.log("No data after lastGfsTs, adding all seasonal");
+              segments.push(lastForecastHourlySeasonal.slice());
+            }
+          } else {
+            console.log("Seasonal data missing or empty");
           }
 
           // apply offsets so each segment lines up with the previous end point
-          let prevTemp = lastObs.tempF;
+          // For the first segment (minutely), align to the observation at the forecast start time for verification
+          let prevTemp;
+          if (segments.length > 0 && segments[0].length > 0) {
+            const forecastStartTs = segments[0][0].ts;
+            // Find the observation at or before the forecast start time
+            const matchingObs = data.slice().reverse().find(d => d.ts <= forecastStartTs);
+            prevTemp = matchingObs ? matchingObs.tempF : lastObs.tempF;
+          } else {
+            prevTemp = lastObs.tempF;
+          }
+          console.log("Starting forecast adjustment with prevTemp=", prevTemp, "segments.length=", segments.length);
           const adjustedForecast = [];
           for (const segment of segments) {
-            if (!segment || !segment.length) continue;
+            if (!segment || !segment.length) {
+              console.log("Skipping empty segment");
+              continue;
+            }
             const offset = prevTemp - segment[0].tempF;
+            console.log("Segment adjustment: offset=", offset, "segment length=", segment.length);
             for (const pt of segment) {
               adjustedForecast.push({ ts: pt.ts, tempF: pt.tempF + offset });
             }
             prevTemp = adjustedForecast[adjustedForecast.length - 1].tempF;
           }
 
-          if (!adjustedForecast.length) return;
+          console.log("After offset adjustment, adjustedForecast length=", adjustedForecast.length);
+
+          if (!adjustedForecast.length) {
+            console.log("No adjusted forecast data!");
+            return;
+          }
 
           // slice based on user settings (threshold or hours limit)
           let limited;
@@ -840,6 +902,8 @@
             const endTs = adjustedForecast[0].ts + hoursLimit * 3600;
             limited = adjustedForecast.filter(d => d.ts <= endTs);
           }
+
+          console.log("Limited forecast:", limited.length, "points, from", new Date(limited[0].ts * 1000), "to", new Date(limited[limited.length-1].ts * 1000));
 
           const fcTimes = limited.map(d => new Date(d.ts * 1000));
           const fcTemps = limited.map(d => d.tempF);
