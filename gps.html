@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GPS Speed & Direction Monitor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      max-width: 1100px;
+      margin: 18px auto;
+      padding: 12px;
+      background: #121212;
+      color: #ddd;
+    }
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .panel{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}
+    .card {
+      padding:12px;
+      border-radius:10px;
+      background:#1e1e1e;
+      box-shadow:0 1px 6px rgba(0,0,0,.8);
+      color:#ddd;
+    }
+    .big{font-size:1.6rem;font-weight:600}
+    .muted{color:#aaa}
+    canvas{max-width:100%;height:280px;background:#1e1e1e}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button {
+      padding:8px 12px;
+      border-radius:8px;
+      border:1px solid #555;
+      background:#333;
+      color:#ddd;
+      cursor:pointer;
+    }
+    input[type=number] {background:#333;color:#ddd;border:1px solid #555;border-radius:6px;}
+    .status{margin-top:8px;color:#ddd}
+    .compass{display:flex;align-items:center;gap:12px}
+    .compass .dial {
+      width:86px;height:86px;border-radius:50%;
+      border:3px solid #555;
+      display:flex;align-items:center;justify-content:center;
+      position:relative
+    }
+    .needle{position:absolute;width:2px;height:40%;background:#f33;left:50%;top:10%;transform-origin:50% 90%}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 style="margin:0">GPS Speed & Direction Monitor</h1>
+      <div class="muted small">Samples GPS once per second (configurable).</div>
+    </div>
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="clearBtn">Clear</button>
+      <!-- Add this button in your .controls div -->
+      <button id="copyCsvBtn">Copy CSV</button>
+
+      <label class="small">Sample (ms): <input id="sampleInterval" type="number" value="1000" min="200" step="100" style="width:90px"></label>
+    </div>
+  </header>
+
+  <div class="panel">
+    <!-- Card with speed, direction, and info -->
+    <div class="card">
+      <div>Current speed</div>
+      <div class="big" id="speedDisplay">— mph</div>
+      <hr>
+      <div>Current direction</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+        <div class="compass">
+          <div class="dial" id="dial">
+            <div class="needle" id="needle"></div>
+            <div style="position:absolute;bottom:6px;font-size:.8rem">N</div>
+          </div>
+        </div>
+        <div>
+          <div class="big" id="dirDisplay">—°</div>
+          <div class="muted" id="cardinalDisplay">—</div>
+        </div>
+      </div>
+      <div>Altitude</div>
+      <div class="big" id="altDisplay">— ft</div>
+      <div>Accuracy</div>
+      <div class="big" id="accuracyDisplay">— m</div>
+      <hr>
+      <div class="small muted">Last fix: <span id="lastFix">—</span></div>
+      <div class="small muted">Coordinates: <span id="coords">—</span></div>
+      <div class="small muted">Samples kept: <span id="bufferLen">0</span></div>
+      <div class="status" id="status">Status: idle</div>
+    </div>
+
+    <!-- Map card with fullscreen -->
+    <div class="card">
+      <button id="fullscreenMapBtn" style="margin-bottom:8px">Fullscreen Map</button>
+      <h3 style="margin:0 0 8px 0">Map — Path & Speed</h3>
+      <div id="map" style="width:100%;height:350px;border-radius:10px"></div>
+      <label><input type="checkbox" id="mapb">Auto Map</label>
+    </div>
+  </div>
+
+  <!-- Graph selector -->
+  <div class="card">
+    <label for="graphSelect">Select graph:</label>
+    <select id="graphSelect">
+      <option value="speed">Speed (mph)</option>
+      <option value="direction">Direction (°)</option>
+      <option value="altitude">Altitude (ft)</option>
+    </select>
+  </div>
+
+  <!-- Graphs -->
+  <section class="card graph" id="speedGraph">
+    <canvas id="speedChart"></canvas>
+  </section>
+  <section class="card graph" id="dirGraph" style="display:none">
+    <canvas id="dirChart"></canvas>
+  </section>
+  <section class="card graph" id="altGraph" style="display:none">
+    <canvas id="altChart"></canvas>
+  </section>
+
+  <!-- Fullscreen overlay -->
+  <div id="fullscreenOverlay" style="
+      display:none;
+      position:fixed;
+      top:0; left:0; right:0; bottom:0;
+      background:#121212;
+      z-index:9999;
+      overflow:hidden;
+      ">
+    <div style="position:absolute;top:8px;left:8px;color:black;font-size:1.2rem;z-index:10000;" id="mapOverlayInfo">
+      Speed: — mph | Direction: —° | Accuracy: — m | Time: —
+    </div>
+    <div id="fullscreenMap" style="width:100%;height:100%;"></div>
+    <button id="exitFullscreenBtn" style="
+        position:absolute;
+        top:8px; right:8px;
+        z-index:10000;
+        padding:8px 12px;
+        border-radius:6px;
+        border:none;
+        background:#333;
+        color:#fff;
+    ">Exit</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const mpsToMph = m => m*2.2369362920544;
+    const mToFt = m => m*3.28084;
+
+    function haversine(lat1, lon1, lat2, lon2){
+      const R = 6371000;
+      const toRad = d=>d*Math.PI/180;
+      const dLat = toRad(lat2-lat1);
+      const dLon = toRad(lon2-lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function bearingBetween(lat1,lon1,lat2,lon2){
+      const toRad = d=>d*Math.PI/180, toDeg = r=>r*180/Math.PI;
+      const dLon = toRad(lon2-lon1);
+      const y = Math.sin(dLon)*Math.cos(toRad(lat2));
+      const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLon);
+      return (toDeg(Math.atan2(y,x))+360)%360;
+    }
+
+    function degToCardinal(deg){
+      const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW','N'];
+      return dirs[Math.round(deg/22.5)];
+    }
+
+    let maxPoints=30000;
+    let timestamps=[], speedData=[], dirData=[], altData=[];
+
+    const speedCtx=document.getElementById('speedChart').getContext('2d');
+    const dirCtx=document.getElementById('dirChart').getContext('2d');
+    const altCtx=document.getElementById('altChart').getContext('2d');
+
+    const speedChart=new Chart(speedCtx,{
+      type:'line', data:{labels:[], datasets:[{label:'Speed (mph)',data:[],tension:0.25,pointRadius:0,color:'#00ffff'}]},
+      options:{animation:false,scales:{x:{title:{display:true,text:'Time'}},y:{title:{display:true,text:'mph'}}},plugins:{legend:{display:false}}}
+    });
+
+    const dirChart=new Chart(dirCtx,{
+      type:'line', data:{labels:[], datasets:[{label:'Heading (°)',data:[],tension:0.25,pointRadius:0,color:'#ffcc00'}]},
+      options:{animation:false,scales:{x:{title:{display:true,text:'Time'}},y:{min:0,max:360,title:{display:true,text:'°'}}},plugins:{legend:{display:false}}}
+    });
+
+    const altChart=new Chart(altCtx,{
+      type:'line', data:{labels:[], datasets:[{label:'Altitude (ft)',data:[],tension:0.25,pointRadius:0,color:'#ff66ff'}]},
+      options:{animation:false,scales:{x:{title:{display:true,text:'Time'}},y:{title:{display:true,text:'ft'}}},plugins:{legend:{display:false}}}
+    });
+
+    const startBtn=document.getElementById('startBtn');
+    const stopBtn=document.getElementById('stopBtn');
+    const clearBtn=document.getElementById('clearBtn');
+    const sampleInput=document.getElementById('sampleInterval');
+    const speedDisplay=document.getElementById('speedDisplay');
+    const dirDisplay=document.getElementById('dirDisplay');
+    const cardinalDisplay=document.getElementById('cardinalDisplay');
+    const altDisplay=document.getElementById('altDisplay');
+    const accuracyDisplay=document.getElementById('accuracyDisplay');
+    const lastFix=document.getElementById('lastFix');
+    const coordsEl=document.getElementById('coords');
+    const bufferLen=document.getElementById('bufferLen');
+    const statusEl=document.getElementById('status');
+    const needle=document.getElementById('needle');
+
+    let sampler=null, lastPos=null;
+
+    function updateDisplays(pos,speedMph,heading,altFt){
+      speedDisplay.textContent = speedMph!=null ? speedMph.toFixed(2)+' mph' : '— mph';
+      dirDisplay.textContent = heading!=null ? heading+'°' : '—°';
+      cardinalDisplay.textContent = heading!=null ? degToCardinal(heading) : '—';
+      altDisplay.textContent = altFt!=null ? altFt.toFixed(2)+' ft' : '— ft';
+      accuracyDisplay.textContent = pos && pos.coords.accuracy != null ? pos.coords.accuracy.toFixed(1)+' m' : '— m';
+
+      if(heading!=null) needle.style.transform=`translateX(-50%) rotate(${heading}deg)`;
+      lastFix.textContent = pos ? new Date(pos.timestamp).toLocaleTimeString() : '—';
+      coordsEl.textContent = pos ? `${pos.coords.latitude.toFixed(7)}, ${pos.coords.longitude.toFixed(7)}`:'—';
+      bufferLen.textContent = speedData.length;
+
+      if(pos){
+        document.getElementById('mapOverlayInfo').textContent =
+          `Speed: ${speedMph!=null ? speedMph.toFixed(2) : '—'} mph | Direction: ${heading!=null ? heading+'°':'—°'} | Accuracy: ${pos.coords.accuracy != null ? pos.coords.accuracy.toFixed(1)+' m' : '—'} | Time: ${new Date(pos.timestamp).toLocaleTimeString()}`;
+      }
+    }
+
+    function pushSample(pos,speedMph,heading,altFt){
+      timestamps.push(pos.timestamp);
+      speedData.push(speedMph); dirData.push(heading); altData.push(altFt);
+      while(timestamps.length>maxPoints){timestamps.shift(); speedData.shift(); dirData.shift(); altData.shift();}
+      const labels = timestamps.map(t => new Date(t).toLocaleTimeString());
+      speedChart.data.labels=labels; speedChart.data.datasets[0].data=speedData; speedChart.update('none');
+      dirChart.data.labels=labels; dirChart.data.datasets[0].data=dirData; dirChart.update('none');
+      altChart.data.labels=labels; altChart.data.datasets[0].data=altData; altChart.update('none');
+    }
+
+    function samplePosition(){
+      if(!('geolocation' in navigator)){statusEl.textContent='Geolocation not supported'; return;}
+      navigator.geolocation.getCurrentPosition(pos=>{
+        let speedMps = pos.coords.speed;
+        let heading = pos.coords.heading;
+        let altFt = pos.coords.altitude != null ? mToFt(pos.coords.altitude) : null;
+        if((speedMps==null || isNaN(speedMps)) && lastPos){
+          const dt=(pos.timestamp-lastPos.timestamp)/1000;
+          if(dt>0){
+            const dist=haversine(lastPos.coords.latitude,lastPos.coords.longitude,pos.coords.latitude,pos.coords.longitude);
+            speedMps=dist/dt;
+          }
+        }
+        if((heading==null || isNaN(heading)) && lastPos){
+          heading=bearingBetween(lastPos.coords.latitude,lastPos.coords.longitude,pos.coords.latitude,pos.coords.longitude);
+        }
+        lastPos=pos;
+        const speedMph=speedMps!=null?mpsToMph(speedMps):null;
+        updateDisplays(pos,speedMph,heading,altFt);
+        pushSample(pos,speedMph,heading,altFt);
+        updateMap(pos.coords.latitude,pos.coords.longitude,speedMph);
+        statusEl.textContent='Active';
+      },err=>{statusEl.textContent='Error: '+err.message;},{enableHighAccuracy:true,maximumAge:300,timeout:2000});
+    }
+
+    startBtn.addEventListener('click',()=>{
+      const interval=Math.max(200,parseInt(sampleInput.value)||1000);
+      sampleInput.value=interval;
+      if(sampler) clearInterval(sampler);
+      samplePosition();
+      sampler=setInterval(samplePosition,interval);
+      startBtn.disabled=true; stopBtn.disabled=false;
+      statusEl.textContent='Starting...';
+    });
+
+    stopBtn.addEventListener('click',()=>{
+      if(sampler) clearInterval(sampler); sampler=null;
+      startBtn.disabled=false; stopBtn.disabled=true;
+      statusEl.textContent='Stopped';
+    });
+
+    clearBtn.addEventListener('click',()=>{
+      timestamps=[]; speedData=[]; dirData=[]; altData=[]; lastPos=null;
+      speedChart.data.labels=[]; speedChart.data.datasets[0].data=[]; speedChart.update();
+      dirChart.data.labels=[]; dirChart.data.datasets[0].data=[]; dirChart.update();
+      altChart.data.labels=[]; altChart.data.datasets[0].data=[]; altChart.update();
+      speedMarkers.forEach(m=>map.removeLayer(m));
+      speedMarkers=[];
+      pathLine.setLatLngs([]);
+      updateDisplays(null,null,null,null);
+      statusEl.textContent='Cleared';
+    });
+
+    // Map
+    const map=L.map('map').setView([0,0],2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let pathLine=L.polyline([], {color:'#00aaff', weight:4}).addTo(map);
+    let speedMarkers=[];
+
+    function interpolateColor(speed){
+      if(speed==null) return '#999';
+      const stops=[0,5,15,30,60,85];
+      const colors=['#0000ff','#00ff00','#ffff00','#ffa500','#ff0000','#800080'];
+      for(let i=0;i<stops.length-1;i++){
+        if(speed<=stops[i+1]){
+          const t=(speed-stops[i])/(stops[i+1]-stops[i]);
+          const c1=colors[i], c2=colors[i+1];
+          const r=parseInt(c1.slice(1,3),16), g=parseInt(c1.slice(3,5),16), b=parseInt(c1.slice(5,7),16);
+          const r2=parseInt(c2.slice(1,3),16), g2=parseInt(c2.slice(3,5),16), b2=parseInt(c2.slice(5,7),16);
+          const r3=Math.round(r+(r2-r)*t), g3=Math.round(g+(g2-g)*t), b3=Math.round(b+(b2-b)*t);
+          return `rgb(${r3},${g3},${b3})`;
+        }
+      }
+      return '#800080';
+    }
+
+    function updateMap(lat,lon,speed){
+      if(!lat||!lon) return;
+      const latlng=[lat,lon];
+      pathLine.addLatLng(latlng);
+      const color=interpolateColor(speed);
+      const marker=L.circleMarker(latlng,{radius:5,color:color,fillColor:color,fillOpacity:0.8}).addTo(map);
+      marker.bindPopup(`Speed: ${speed?speed.toFixed(1):'—'} mph`);
+      speedMarkers.push(marker);
+      const mapb = document.getElementById("mapb")
+      if(mapb.checked == true) {
+        if(pathLine.getBounds().isValid()) map.fitBounds(pathLine.getBounds(),{padding:[20,20]});
+      }
+    }
+
+    // Graph toggle
+    const graphSelect = document.getElementById('graphSelect');
+    graphSelect.addEventListener('change', e => {
+      document.getElementById('speedGraph').style.display = e.target.value==='speed' ? 'block':'none';
+      document.getElementById('dirGraph').style.display = e.target.value==='direction' ? 'block':'none';
+      document.getElementById('altGraph').style.display = e.target.value==='altitude' ? 'block':'none';
+    });
+
+    // Fullscreen map logic
+    const fullscreenBtn = document.getElementById('fullscreenMapBtn');
+    const fullscreenOverlay = document.getElementById('fullscreenOverlay');
+    const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
+    let fullscreenMapInstance = null;
+
+    fullscreenBtn.addEventListener('click', ()=>{
+      fullscreenOverlay.style.display='block';
+      if(fullscreenMapInstance) fullscreenMapInstance.invalidateSize();
+      else{
+        fullscreenMapInstance = L.map('fullscreenMap').setView([0,0],2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(fullscreenMapInstance);
+        pathLine = L.polyline([], {color:'#00aaff', weight:4}).addTo(fullscreenMapInstance);
+      }
+      speedMarkers.forEach(m=>{
+        const latlng = m.getLatLng();
+        L.circleMarker(latlng,{radius:5,color:m.options.color,fillColor:m.options.fillColor,fillOpacity:0.8}).addTo(fullscreenMapInstance);
+      });
+      fullscreenMapInstance.fitBounds(pathLine.getBounds(), {padding:[20,20]});
+    });
+
+    exitFullscreenBtn.addEventListener('click', ()=>{
+      fullscreenOverlay.style.display='none';
+    });
+    const copyCsvBtn = document.getElementById('copyCsvBtn');
+
+copyCsvBtn.addEventListener('click', () => {
+  if (timestamps.length === 0) return alert("No data to copy.");
+
+  // CSV header
+  let csv = "Timestamp,Latitude,Longitude,Speed (mph),Direction (°),Altitude (ft),Accuracy (m)\n";
+
+  // Build CSV rows
+  for (let i = 0; i < timestamps.length; i++) {
+    const time = new Date(timestamps[i]).toISOString();
+    const lat = i === 0 ? lastPos?.coords.latitude?.toFixed(7) || '' : ''; // fallback
+    const lon = i === 0 ? lastPos?.coords.longitude?.toFixed(7) || '' : '';
+    const speed = speedData[i] != null ? speedData[i].toFixed(2) : '';
+    const dir = dirData[i] != null ? dirData[i] : '';
+    const alt = altData[i] != null ? altData[i].toFixed(2) : '';
+    const acc = lastPos?.coords.accuracy != null ? lastPos.coords.accuracy.toFixed(1) : '';
+    
+    csv += `${time},${lat},${lon},${speed},${dir},${alt},${acc}\n`;
+  }
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(csv)
+    .then(() => statusEl.textContent = 'CSV copied to clipboard')
+    .catch(err => statusEl.textContent = 'Error copying CSV: '+err);
+});
+
+  </script>
+</body>
+</html>
