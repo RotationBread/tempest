@@ -7,26 +7,61 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
     body {
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-      max-width: 1100px;
-      margin: 18px auto;
-      padding: 12px;
+      width: 100vw;
+      max-height: 100vh;
       background: #121212;
       color: #ddd;
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
     }
+    .top {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.top-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.top-right {
+  flex: 1;
+  display: flex;
+}
+
+.bottom {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
     header{display:flex;align-items:center;justify-content:space-between;gap:12px}
     .panel{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}
     .card {
       padding:12px;
       border-radius:10px;
+      width: 99%;
       background:#1e1e1e;
       box-shadow:0 1px 6px rgba(0,0,0,.8);
       color:#ddd;
     }
-    .big{font-size:1.6rem;font-weight:600}
-    .muted{color:#aaa}
-    canvas{max-width:100%;height:280px;background:#1e1e1e}
+    .big{font-size:15px;font-weight:600}
+    .muted{color:#aaa; font-size: 12px}
+    canvas{max-width:100%;height:200px;background:#1e1e1e}
     .controls{display:flex;gap:8px;flex-wrap:wrap}
     button {
       padding:8px 12px;
@@ -49,81 +84,103 @@
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1 style="margin:0">GPS Speed & Direction Monitor</h1>
-      <div class="muted small">Samples GPS once per second (configurable).</div>
-    </div>
-    <div class="controls">
-      <button id="startBtn">Start</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <button id="clearBtn">Clear</button>
-      <!-- Add this button in your .controls div -->
-      <button id="copyCsvBtn">Copy CSV</button>
+  <div class="top">
+    <div class="top-left">
+      <header>
+        <div class="controls">
+          <button id="startBtn">Start</button>
+          <button id="stopBtn" disabled>Stop</button>
+          <button id="clearBtn">Clear</button>
+          <!-- Add this button in your .controls div -->
+          <button id="copyCsvBtn">Copy CSV</button>
 
-      <label class="small">Sample (ms): <input id="sampleInterval" type="number" value="1000" min="200" step="100" style="width:90px"></label>
-    </div>
-  </header>
+          <label class="small">Sample (ms): <input id="sampleInterval" type="number" value="1000" min="200" step="100" style="width:90px"></label>
+        </div>
+      </header>
 
-  <div class="panel">
-    <!-- Card with speed, direction, and info -->
-    <div class="card">
-      <div>Current speed</div>
-      <div class="big" id="speedDisplay">— mph</div>
-      <hr>
-      <div>Current direction</div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
-        <div class="compass">
-          <div class="dial" id="dial">
-            <div class="needle" id="needle"></div>
-            <div style="position:absolute;bottom:6px;font-size:.8rem">N</div>
+      <!-- Card with speed, direction, and info -->
+      <div class="card">
+        <div>Current speed</div>
+        <div class="big" id="speedDisplay">— mph</div>
+        <hr>
+        <div>Current direction</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+          <div class="compass">
+            <div class="dial" id="dial">
+              <div class="needle" id="needle"></div>
+              <div style="position:absolute;bottom:6px;font-size:.8rem">N</div>
+            </div>
+          </div>
+          <div>
+            <div class="big" id="dirDisplay">—°</div>
+            <div class="muted" id="cardinalDisplay">—</div>
           </div>
         </div>
-        <div>
-          <div class="big" id="dirDisplay">—°</div>
-          <div class="muted" id="cardinalDisplay">—</div>
-        </div>
+        
+        <div>Altitude</div>
+        <div class="big" id="altDisplay">— ft</div>
+        <div>Accuracy</div>
+        <div class="big" id="accuracyDisplay">— m</div>
+        <hr>
+<div><b>Target Navigation</b></div>
+
+<div style="margin-top:8px">
+  <label>Lat: <input id="targetLat" type="number" step="0.0000001" placeholder="—"></label>
+  <label>Lon: <input id="targetLon" type="number" step="0.0000001" placeholder="—"></label>
+</div>
+
+<div style="margin-top:8px">
+  <div>Distance</div>
+  <div class="big" id="targetDist">— mi</div>
+
+  <div>Absolute Direction</div>
+  <div class="big" id="targetAbsDir">—°</div>
+  <div class="muted" id="targetAbsCard">—</div>
+
+  <div>Relative Turn</div>
+  <div class="big" id="targetRelDir">—°</div>
+</div>
+        <hr>
+        <div class="small muted">Last fix: <span id="lastFix">—</span></div>
+        <div class="small muted">Coordinates: <span id="coords">—</span></div>
+        
+        <div class="small muted">Samples kept: <span id="bufferLen">0</span></div>
+        <div class="status" id="status">Status: idle</div>
       </div>
-      <div>Altitude</div>
-      <div class="big" id="altDisplay">— ft</div>
-      <div>Accuracy</div>
-      <div class="big" id="accuracyDisplay">— m</div>
-      <hr>
-      <div class="small muted">Last fix: <span id="lastFix">—</span></div>
-      <div class="small muted">Coordinates: <span id="coords">—</span></div>
-      <div class="small muted">Samples kept: <span id="bufferLen">0</span></div>
-      <div class="status" id="status">Status: idle</div>
     </div>
 
-    <!-- Map card with fullscreen -->
+    <div class="top-right">
+      <!-- Map card with fullscreen -->
+      <div class="card">
+        <button id="fullscreenMapBtn" style="margin-bottom:8px">Fullscreen Map</button>
+        <div id="map" style="width:100%;height:80%;border-radius:10px"></div>
+        <label><input type="checkbox" id="mapb">Auto Map</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <!-- Graph selector -->
     <div class="card">
-      <button id="fullscreenMapBtn" style="margin-bottom:8px">Fullscreen Map</button>
-      <h3 style="margin:0 0 8px 0">Map — Path & Speed</h3>
-      <div id="map" style="width:100%;height:350px;border-radius:10px"></div>
-      <label><input type="checkbox" id="mapb">Auto Map</label>
+      <label for="graphSelect">Select graph:</label>
+      <select id="graphSelect">
+        <option value="speed">Speed (mph)</option>
+        <option value="direction">Direction (°)</option>
+        <option value="altitude">Altitude (ft)</option>
+      </select>
     </div>
-  </div>
 
-  <!-- Graph selector -->
-  <div class="card">
-    <label for="graphSelect">Select graph:</label>
-    <select id="graphSelect">
-      <option value="speed">Speed (mph)</option>
-      <option value="direction">Direction (°)</option>
-      <option value="altitude">Altitude (ft)</option>
-    </select>
+    <!-- Graphs -->
+    <section class="card graph" id="speedGraph">
+      <canvas id="speedChart"></canvas>
+    </section>
+    <section class="card graph" id="dirGraph" style="display:none">
+      <canvas id="dirChart"></canvas>
+    </section>
+    <section class="card graph" id="altGraph" style="display:none">
+      <canvas id="altChart"></canvas>
+    </section>
   </div>
-
-  <!-- Graphs -->
-  <section class="card graph" id="speedGraph">
-    <canvas id="speedChart"></canvas>
-  </section>
-  <section class="card graph" id="dirGraph" style="display:none">
-    <canvas id="dirChart"></canvas>
-  </section>
-  <section class="card graph" id="altGraph" style="display:none">
-    <canvas id="altChart"></canvas>
-  </section>
 
   <!-- Fullscreen overlay -->
   <div id="fullscreenOverlay" style="
@@ -215,6 +272,13 @@
     const statusEl=document.getElementById('status');
     const needle=document.getElementById('needle');
 
+    const targetLatInput = document.getElementById('targetLat');
+    const targetLonInput = document.getElementById('targetLon');
+    const targetDist = document.getElementById('targetDist');
+    const targetAbsDir = document.getElementById('targetAbsDir');
+    const targetAbsCard = document.getElementById('targetAbsCard');
+    const targetRelDir = document.getElementById('targetRelDir');
+
     let sampler=null, lastPos=null;
 
     function updateDisplays(pos,speedMph,heading,altFt){
@@ -234,6 +298,39 @@
           `Speed: ${speedMph!=null ? speedMph.toFixed(2) : '—'} mph | Direction: ${heading!=null ? heading+'°':'—°'} | Accuracy: ${pos.coords.accuracy != null ? pos.coords.accuracy.toFixed(1)+' m' : '—'} | Time: ${new Date(pos.timestamp).toLocaleTimeString()}`;
       }
     }
+
+    function updateTargetInfo(currentPos, heading){
+  const tLat = parseFloat(targetLatInput.value);
+  const tLon = parseFloat(targetLonInput.value);
+
+  if(!currentPos || isNaN(tLat) || isNaN(tLon)){
+    targetDist.textContent = '— mi';
+    targetAbsDir.textContent = '—°';
+    targetAbsCard.textContent = '—';
+    targetRelDir.textContent = '—°';
+    return;
+  }
+
+  const lat = currentPos.coords.latitude;
+  const lon = currentPos.coords.longitude;
+
+  // Distance (meters → miles)
+  const distMeters = haversine(lat, lon, tLat, tLon);
+  const distMiles = distMeters * 0.000621371;
+
+  // Absolute bearing
+  const absBearing = bearingBetween(lat, lon, tLat, tLon);
+
+  // Relative turn (-180 to +180)
+  let rel = absBearing - heading;
+  if(rel > 180) rel -= 360;
+  if(rel < -180) rel += 360;
+
+  targetDist.textContent = distMiles.toFixed(4) + ' mi';
+  targetAbsDir.textContent = absBearing.toFixed(1) + '°';
+  targetAbsCard.textContent = degToCardinal(absBearing);
+  targetRelDir.textContent = (isNaN(rel) ? '—' : rel.toFixed(1) + '°');
+}
 
     function pushSample(pos,speedMph,heading,altFt){
       timestamps.push(pos.timestamp);
@@ -264,6 +361,7 @@
         lastPos=pos;
         const speedMph=speedMps!=null?mpsToMph(speedMps):null;
         updateDisplays(pos,speedMph,heading,altFt);
+        updateTargetInfo(pos, heading);
         pushSample(pos,speedMph,heading,altFt);
         updateMap(pos.coords.latitude,pos.coords.longitude,speedMph);
         statusEl.textContent='Active';
