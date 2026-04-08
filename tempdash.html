@@ -129,7 +129,7 @@
       border: 1px solid rgba(255,255,255,0.03);
     }
 
-    #current-temp .temp-value{ font-size: clamp(28px,8vw,72px); color: var(--accent); }
+    #current-temp .temp-value{ font-size: clamp(28px,10vw,72px); color: var(--accent); }
     #current-temp .temp-time{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
     #current-temp .temp-info{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
     #current-temp .temp-info-label{ font-weight:600; color: #e6eef6; }
@@ -167,6 +167,7 @@
     /* Clock + metadata box at top of right column, spaced with siblings */
     #clock-container {
       position: relative;
+      display: flex;
       width: max-content;
       align-self: flex-end;
       background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
@@ -179,8 +180,8 @@
     }
 
     #clock-display {
-      font-size: 28px;
-      font-weight: 900;
+      font-size: 50px;
+      position: relative;
       color: var(--accent);
       font-family: 'Courier New', monospace;
       letter-spacing: 1px;
@@ -189,6 +190,7 @@
 
     #clock-detail-holder {
       margin-top: 8px;
+      width:50%;
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -237,7 +239,7 @@
     <div id="right-column">
       <div id="top-row">
         <div id="clock-container">
-          <div id="clock-display">--:--:--</div>
+          
 
           <div id="clock-detail-holder">
             <div class="temp-info"><span class="temp-info-label">Obs start:</span> <span id="obs-start">--</span></div>
@@ -250,6 +252,7 @@
             <div class="temp-info" id="gfs-offset-row"><span class="temp-info-label">GFS offset:</span> <span id="gfs-offset">--</span></div>
             <div class="temp-info" id="seasonal-offset-row"><span class="temp-info-label">Seasonal offset:</span> <span id="seasonal-offset">--</span></div>
           </div>
+          <strong><div id="clock-display">--:--:--</div></strong>
         </div>
 
         <div id="current-temp">
@@ -618,7 +621,7 @@
       // Calculate forecast deltas for seamless transitions
       let hrrrDelta = '--';
       if (lastForecastMinutely && lastForecastMinutely.length > 0) {
-        hrrrDelta = (lastForecastMinutely[lastForecastMinutely.length - 1].tempF - currentTemp).toFixed(1) + '°F';
+        hrrrDelta = (currentTemp - lastForecastMinutely[0].tempF).toFixed(1) + '°F';
       }
       // NBM, GFS, Seasonal offsets are captured during adjustment above
 
