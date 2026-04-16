@@ -1,0 +1,309 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Severe Weather Percentages</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input[type="number"] { width: 70px; }
+    .day-entry { margin-bottom: 10px; }
+    .output { margin-top: 20px; white-space: pre-wrap; font-family: Arial, sans-serif; }
+    .more-severe-section {
+      border: 1px solid #e74c3c;
+      background: #fff6f6;
+      padding: 10px;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+    .more-severe-header {
+      color: #e74c3c;
+      font-weight: bold;
+    }
+    .more-severe-inputs label {
+      display: block;
+      margin-bottom: 2px;
+    }
+    #daysUntilSection {
+      border: 1px solid #3498db;
+      background: #f0f8ff;
+      padding: 10px;
+      margin-top: 20px;
+    }
+    .days-until-row {
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Enter Severe Weather Percentages</h2>
+  <form id="inputForm">
+    <div id="dayInputs"></div>
+    <div id="daysUntilSection">
+      <strong>Days until:</strong>
+      <div id="daysUntilInputs"></div>
+    </div>
+    <button type="submit">Generate Output</button>
+  </form>
+
+  <div class="output" id="outputBox"></div>
+
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script>
+    const LAT = 42.11847964144647;
+    const LON = -76.27349053699984;
+
+    const categoryToPercent = {
+      "TSTM": 0.01, "MRGL": 5, "SLGT": 15,
+      "ENH": 30, "MDT": 45, "HIGH": 60
+    };
+
+    const categories = [
+      { name: "none", min: 0, max: 0 },
+      { name: "TSTM", min: 0.001, max: 4.99 },
+      { name: "MRGL", min: 5, max: 14.99 },
+      { name: "SLGT", min: 15, max: 29.99 },
+      { name: "ENH", min: 30, max: 44.99 },
+      { name: "MDT", min: 45, max: 59.99 },
+      { name: "HIGH", min: 60, max: 100 }
+    ];
+
+    function getCategory(pct) {
+      for (const cat of categories) {
+        if (pct >= cat.min && pct <= cat.max) return cat.name;
+      }
+      return "none";
+    }
+
+    function formatRoundedPercent(value) {
+  let rounded = Math.round(value * 100) / 100;
+  if (value === 0.01) return "TSTM (0%)";
+
+  const trimmed = rounded % 1 === 0
+    ? rounded.toFixed(0)
+    : (rounded * 10 % 1 === 0
+      ? rounded.toFixed(1)
+      : rounded.toFixed(2));
+
+  return `${getCategory(value)} (${trimmed}%)`;
+}
+
+
+    function formatEntry(label, you, spc, csu) {
+      const youStr = formatRoundedPercent(you);
+      const spcStr = formatRoundedPercent(spc);
+      const csuStr = formatRoundedPercent(csu);
+      return `${label}: ${youStr} | SPC: ${spcStr} | CSU-MLP: ${csuStr}`;
+    }
+
+    function getDateString(offset) {
+      const date = new Date();
+      date.setDate(date.getDate() + offset);
+      return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function isMoreSevere(you, spc, csu) {
+      return you >= 15 || spc >= 15 || csu >= 15;
+    }
+
+    function createInputs() {
+      const container = document.getElementById("dayInputs");
+      for (let i = 0; i < 8; i++) {
+        const dateStr = getDateString(i);
+        const div = document.createElement("div");
+        div.className = "day-entry";
+        div.innerHTML = `
+          <strong>${dateStr}:</strong>
+          You: <input type="number" name="your${i}">
+          SPC: <input type="number" id="spc${i}" name="spc${i}">
+          CSU-MLP: <input type="number" name="csu${i}">
+          <span id="moreSevereInputs${i}"></span>
+        `;
+        container.appendChild(div);
+      }
+    }
+
+    function createMoreSevereInputs(idx, you, spc, csu) {
+      const container = document.getElementById(`moreSevereInputs${idx}`);
+
+      const preserved = {};
+      const keys = ['tornadoYou', 'tornadoSpc', 'tornadoCsu', 'windYou', 'windSpc', 'windCsu', 'hailYou', 'hailSpc', 'hailCsu', 'timing'];
+      keys.forEach(key => {
+        const existing = document.querySelector(`[name='${key}${idx}']`);
+        if (existing) preserved[key] = existing.value;
+      });
+
+      const overallStr = formatEntry("Overall", you, spc, csu);
+      container.innerHTML = `
+        <div class="more-severe-section">
+          <div class="more-severe-header">More Severe Weather Percentages for ${getDateString(idx)}:</div>
+          <div><span id="overallMoreSevere${idx}">${overallStr}</span></div>
+          <div class="more-severe-inputs">
+            ${keys.map(key =>
+              `<label>${key.replace(/([A-Z])/g, ' $1')}: <input type="text" name="${key}${idx}" value="${preserved[key] || ''}"></label>`
+            ).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function removeMoreSevereInputs(idx) {
+      const container = document.getElementById(`moreSevereInputs${idx}`);
+      container.innerHTML = '';
+    }
+
+    function updateMoreSevereSections() {
+      for (let i = 0; i < 8; i++) {
+        const you = parseFloat(document.querySelector(`input[name='your${i}']`).value) || 0;
+        const spc = parseFloat(document.querySelector(`input[name='spc${i}']`).value) || 0;
+        const csu = parseFloat(document.querySelector(`input[name='csu${i}']`).value) || 0;
+        if (isMoreSevere(you, spc, csu)) {
+          createMoreSevereInputs(i, you, spc, csu);
+        } else {
+          removeMoreSevereInputs(i);
+        }
+      }
+    }
+
+    function attachInputListeners() {
+      for (let i = 0; i < 8; i++) {
+        ['your', 'spc', 'csu'].forEach(prefix => {
+          document.querySelector(`input[name='${prefix}${i}']`).addEventListener('input', updateMoreSevereSections);
+        });
+      }
+    }
+
+    function renderDaysUntilInputs() {
+      const container = document.getElementById("daysUntilInputs");
+      container.innerHTML = `
+        <div class="days-until-row">
+          <input type="hidden" name="daysUntilEvent0" value="Snow">
+          <label>Snow:</label>
+          <input type="number" min="1" name="daysUntilNum0" placeholder="Days" style="width:60px;">
+        </div>
+        <div class="days-until-row">
+          <input type="hidden" name="daysUntilEvent1" value="Thunderstorms">
+          <label>Thunderstorms:</label>
+          <input type="number" min="1" name="daysUntilNum1" placeholder="Days" style="width:60px;">
+        </div>
+      `;
+    }
+
+    function getToday() {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      return now;
+    }
+
+    function addDays(date, n) {
+      const newDate = new Date(date);
+      newDate.setDate(newDate.getDate() + n);
+      return newDate;
+    }
+
+    function formatDate(date) {
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    document.getElementById("inputForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      let output = "Severe Weather Percentages:\n";
+      let moreSevereOutputs = [];
+
+      for (let i = 0; i < 8; i++) {
+        const dateStr = getDateString(i);
+        const you = parseFloat(formData.get(`your${i}`)) || 0;
+        const spc = parseFloat(formData.get(`spc${i}`)) || 0;
+        const csu = parseFloat(formData.get(`csu${i}`)) || 0;
+        output += formatEntry(dateStr, you, spc, csu) + "\n";
+
+        if (isMoreSevere(you, spc, csu)) {
+          const ms = `More Severe Weather Percentages for ${dateStr}:
+${formatEntry("Overall", you, spc, csu)}
+Tornado: ${formData.get('tornadoYou'+i)||''} | SPC: ${formData.get('tornadoSpc'+i)||''} | CSU-MLP: ${formData.get('tornadoCsu'+i)||''}
+Wind: ${formData.get('windYou'+i)||''} | SPC: ${formData.get('windSpc'+i)||''} | CSU-MLP: ${formData.get('windCsu'+i)||''}
+Hail: ${formData.get('hailYou'+i)||''} | SPC: ${formData.get('hailSpc'+i)||''} | CSU-MLP: ${formData.get('hailCsu'+i)||''}
+Timing: ${formData.get('timing'+i)||''}
+`;
+          moreSevereOutputs.push(ms);
+        }
+      }
+
+      if (moreSevereOutputs.length > 0) {
+        output += "\n" + moreSevereOutputs.join("\n");
+      }
+
+      let today = getToday();
+      let daysUntilLines = [];
+      for (let i = 0; i < 2; i++) {
+        let event = i === 0 ? "Snow" : "Thunderstorms";
+        let num = parseInt(formData.get(`daysUntilNum${i}`), 10);
+        if (event && num && num >= 1) {
+          let eventDate = addDays(today, num - 1);
+          daysUntilLines.push(`${event}: ${num} (${formatDate(eventDate)})`);
+        }
+      }
+
+      if (daysUntilLines.length > 0) {
+        output += "\n\nDays until:\n" + daysUntilLines.join("\n");
+      }
+
+      document.getElementById("outputBox").textContent = output.trim();
+    });
+
+    async function fetchSPCValues() {
+      const spcUrls = {
+        1: 'https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson',
+        2: 'https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson',
+        3: 'https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson',
+        4: 'https://www.spc.noaa.gov/products/exper/day4-8/day4prob.nolyr.geojson',
+        5: 'https://www.spc.noaa.gov/products/exper/day4-8/day5prob.nolyr.geojson',
+        6: 'https://www.spc.noaa.gov/products/exper/day4-8/day6prob.nolyr.geojson',
+        7: 'https://www.spc.noaa.gov/products/exper/day4-8/day7prob.nolyr.geojson',
+        8: 'https://www.spc.noaa.gov/products/exper/day4-8/day8prob.nolyr.geojson'
+      };
+
+      for (let i = 1; i <= 8; i++) {
+        try {
+          const res = await fetch(spcUrls[i]);
+          const data = await res.json();
+          let matched = false;
+
+          for (const feature of data.features) {
+            if (turf.booleanPointInPolygon([LON, LAT], feature.geometry)) {
+              let val = 0;
+              if (i <= 3) {
+                const cat = (feature.properties.LABEL || feature.properties.category || "").toUpperCase();
+                val = categoryToPercent[cat] ?? 0;
+              } else {
+                const prob = parseFloat(feature.properties.probability || feature.properties.LABEL || "0");
+                val = isNaN(prob) ? 0 : prob * 100;
+              }
+              document.getElementById(`spc${i - 1}`).value = val;
+              matched = true;
+              break;
+            }
+          }
+
+          if (!matched) {
+            document.getElementById(`spc${i - 1}`).value = 0;
+          }
+        } catch (err) {
+          console.error(`Day ${i} fetch error:`, err);
+          document.getElementById(`spc${i - 1}`).value = 0;
+        }
+      }
+
+      updateMoreSevereSections();
+    }
+
+    createInputs();
+    fetchSPCValues();
+    renderDaysUntilInputs();
+
+    window.onload = function() {
+      attachInputListeners();
+      updateMoreSevereSections();
+    };
+  </script>
+</body>
+</html>
