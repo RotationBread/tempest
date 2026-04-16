@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Temperature Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <style>
+    :root{
+      --bg: #0f1417;
+      --card: #111519;
+      --muted: #9aa4ad;
+      --accent: #ffab40;
+      --glass: rgba(255,255,255,0.02);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background-color: var(--bg);
+      color: #e6eef6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      box-sizing: border-box;
+    }
+
+    /* Full-screen two-column layout: left = deltas, right = current + graph */
+    #dashboard {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 1fr;
+      gap: 30px;
+      height: 100vh;
+      padding: 15px;
+    }
+
+    /* Left column: vertical list of delta boxes, scrollable if needed */
+    .delta-boxes {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-auto-rows: minmax(50px, auto);
+      gap: 5px;
+      background-color: #1e1e1e;
+      padding: 10px;
+      border-radius: 12px;
+      height: 95%;
+      overflow: auto;
+    }
+
+    .delta-box {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.9));
+      padding: 5px 16px;
+      border-radius: 12px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.45);
+      border: 1px solid rgba(255,255,255,0.02);
+      min-height: 60px;
+    }
+
+    .delta-box:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+    }
+
+    .delta-time{ font-size: 13px; color: var(--muted); font-weight:600; }
+    .delta-value{ font-size: 18px; color: var(--accent); font-weight:800; }
+    .delta-temp{ font-size: 12px; color: var(--muted); }
+
+    .delta-left{ display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:90px; }
+    .delta-min{ font-size: 18px; font-weight:800; color: #e6eef6; }
+    .delta-min-time{ font-size: 12px; color: var(--muted); font-weight:600; }
+
+    .delta-main{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex:1; }
+    .delta-amount{ font-size: 28px; font-weight:900; color: var(--accent); }
+    .delta-temp{ font-size: 13px; color: var(--muted); }
+
+    /* Trend arrow styles */
+    .trend{ display:inline-block; font-size:20px; vertical-align:middle; margin-right:8px; }
+    .trend-up{ color: #ff6b6b; }
+    .trend-down{ color: #6bd0ff; }
+    .trend-flat{ color: var(--muted); }
+
+    /* Right column wrapper */
+    #right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      height: 100%;
+      margin-top: 0;
+    }
+
+    /* Top row wrapper in right column: info (left) + current temp (right) */
+    #top-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 30px;
+      width: 100%;
+    }
+
+    #clock-container {
+      flex: 1 1 0;
+      max-width: calc(100% - 520px);
+      min-width: 200px;
+      align-self: flex-start;
+    }
+
+    /* Current temp: large, aligned to the right of the right column */
+    #current-temp {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
+      border-radius: 12px;
+      padding: 18px 22px;
+      font-weight: 800;
+      text-align: center;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+      max-width: 480px;
+      width: fit-content;
+      align-self: flex-start;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    #current-temp .temp-value{ font-size: clamp(28px,10vw,72px); color: var(--accent); }
+    #current-temp .temp-time{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
+    #current-temp .temp-info{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
+    #current-temp .temp-info-label{ font-weight:600; color: #e6eef6; }
+
+    #temp-graph-container {
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.9));
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0; /* allow flex child to shrink properly */
+    }
+
+    #temp-graph {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    button {
+      margin-bottom: 10px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      align-self: flex-start;
+      backdrop-filter: blur(6px);
+    }
+
+    button:hover { color: var(--accent); border-color: rgba(255,171,64,0.25); }
+
+    /* Clock + metadata box at top of right column, spaced with siblings */
+    #clock-container {
+      position: relative;
+      display: flex;
+      width: max-content;
+      align-self: flex-end;
+      background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: 0 6px 18px rgba(2,6,8,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+      z-index: auto;
+      margin: 0;
+    }
+
+    #clock-display {
+      font-size: 50px;
+      position: relative;
+      color: var(--accent);
+      font-family: 'Courier New', monospace;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+
+    #clock-detail-holder {
+      margin-top: 8px;
+      width:50%;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    #clock-detail-holder .temp-info,
+    #clock-detail-holder .temp-time {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.35;
+      font-weight: 500;
+    }
+
+    #clock-detail-holder .temp-info-label {
+      font-weight: 600;
+      color: #e6eef6;
+    }
+
+    .clock-label {
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-top: 4px;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="dashboard">
+    <!-- Left: Temperature changes -->
+    <div class="delta-boxes" id="delta-boxes">
+      <div class="delta-box" data-minutes="1">1 min: --°F</div>
+      <div class="delta-box" data-minutes="5">5 min: --°F</div>
+      <div class="delta-box" data-minutes="15">15 min: --°F</div>
+      <div class="delta-box" data-minutes="30">30 min: --°F</div>
+      <div class="delta-box" data-minutes="60">1 hr: --°F</div>
+      <div class="delta-box" data-minutes="180">3 hr: --°F</div>
+      <div class="delta-box" data-minutes="360">6 hr: --°F</div>
+      <div class="delta-box" data-minutes="720">12 hr: --°F</div>
+      <div class="delta-box" data-minutes="1440">24 hr: --°F</div>
+    </div>
+
+    <!-- Right column: current temp on top, graph fills remaining space -->
+    <div id="right-column">
+      <div id="top-row">
+        <div id="clock-container">
+          
+
+          <div id="clock-detail-holder">
+            <div class="temp-info"><span class="temp-info-label">Obs start:</span> <span id="obs-start">--</span></div>
+            <div class="temp-info" id="forecast-row" style="display:none;"><span class="temp-info-label" id="forecast-end-label">Forecast ends: </span> <span id="forecast-end">--</span></div>
+            <div class="temp-info" id="threshold-row" style="display:none;"><span class="temp-info-label" id="threshold-reach-label">-- </span> <span id="threshold-reach">--</span></div>
+            <div class="temp-info"><span class="temp-info-label">Next Obs Update:</span> <span id="next-obs-update">--</span></div>
+            <div class="temp-info"><span class="temp-info-label">Next forecast update:</span> <span id="next-forecast-update">--</span></div>
+            <div class="temp-info" id="hrrr-offset-row"><span class="temp-info-label">HRRR offset:</span> <span id="hrrr-offset">--</span></div>
+            <div class="temp-info" id="nbm-offset-row"><span class="temp-info-label">NBM offset:</span> <span id="nbm-offset">--</span></div>
+            <div class="temp-info" id="gfs-offset-row"><span class="temp-info-label">GFS offset:</span> <span id="gfs-offset">--</span></div>
+            <div class="temp-info" id="seasonal-offset-row"><span class="temp-info-label">Seasonal offset:</span> <span id="seasonal-offset">--</span></div>
+          </div>
+          <strong><div id="clock-display">--:--:--</div></strong>
+        </div>
+
+        <div id="current-temp">
+        <div class="temp-value">--°F</div>
+        <div class="temp-time"><span class="temp-info-label">Observed:</span> --</div>
+      </div>
+      </div>
+      <div id="temp-graph-container">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <button onclick="toggleFullscreen()">Fullscreen Graph</button>
+          <label style="color:var(--muted);font-weight:600">Color Mode:</label>
+          <select id="color-mode" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:700;">
+            <option value="temp">Temp color</option>
+            <option value="delta">Delta color</option>
+            <option value="trend">Trend color</option>
+          </select>
+          <div id="delta-window"><select id="delta-window" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <option value="1">1m</option>
+            <option value="5" selected>5m</option>
+            <option value="15">15m</option>
+            <option value="30">30m</option>
+            <option value="60">1h</option>
+            <option value="180">3h</option>
+          </select></div>
+          <!-- new controls for graph range -->
+          <span id="graph-range-wrapper" style="display:flex;gap:6px;align-items:center;">
+            <label style="color:var(--muted);font-weight:600">Graph Range:</label>
+            <input type="number" id="range-value" min="1" value="24" style="width:60px;border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <select id="range-units" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+              <option value="minutes">minutes</option>
+              <option value="hours" selected>hours</option>
+              <option value="days">days</option>
+            </select>
+            <button id="apply-range" style="margin-left:4px;padding:6px 10px;font-weight:600;">Apply</button>
+          </span>
+          <!-- forecast toggle & hour limit -->
+          <!-- forecast toggle -->
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="show-forecast" style="margin-right:4px;">
+            Forecast
+          </label>
+          <!-- wrap hour limit so we can hide it when forecast is off -->
+          <span id="forecast-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
+            <input type="number" id="forecast-hours" min="1" max="5200" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            h
+          </span>
+          <!-- forecast threshold toggle & degree input -->
+          <span id="forecast-threshold-checkbox-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
+            <input type="checkbox" id="use-forecast-threshold" style="margin-right:4px;">
+            Threshold
+          </span>
+          <span id="forecast-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
+            <input type="number" id="forecast-threshold" min="-100" max="150" value="32" step="0.1" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
+            °F
+          </span>
+          <label id="sync-obs-forecast-wrapper" style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="sync-obs-forecast" style="margin-right:4px;">
+            Sync obs length to forecast
+          </label>
+          <!-- checkbox to control start/end fields -->
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="show-range-fields" style="margin-right:4px;">
+            Show range
+          </label>
+          <!-- start/end date-time selectors wrapped so they can be hidden -->
+          <span id="range-fields" style="display:none; align-items:center;">
+            <label style="color:var(--muted);font-weight:600;margin-left:8px;">Start:</label>
+            <input type="datetime-local" id="start-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            <label style="color:var(--muted);font-weight:600;">End:</label>
+            <input type="datetime-local" id="end-dt" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+          </span>
+        </div>
+        <div id="temp-graph"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEVICE_ID = 470036;
+    const API_KEY = "4ca9b677-d072-439f-8920-22ea9c630dd8";
+    // Convert C → F (returns number)
+    const cToF = c => (c * 9 / 5 + 32);
+
+    // Parse the WeatherFlow CSV as observation objects
+    function parseWeatherFlowCsv(text) {
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) return [];
+      return lines.slice(1).map(line => {
+        const cols = line.split(',').map(cell => cell.replace(/^'+|'+$/g, ''));
+        return {
+          ts: parseInt(cols[3], 10),
+          tempF: parseFloat(cToF(parseFloat(cols[10])))
+        };
+      }).filter(row => Number.isFinite(row.ts) && Number.isFinite(row.tempF));
+    }
+
+    async function fetchCsvData(url) {
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const text = await resp.text();
+      return parseWeatherFlowCsv(text);
+    }
+
+    // Track observation data info
+    let lastObsTime = null;
+    let lastObsStartTime = null;
+
+    // Update clock every second
+    function updateClock() {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const localTime = `${hours}:${minutes}:${seconds}`;
+      document.getElementById('clock-display').textContent = localTime;
+
+      // Update timing info
+      updateTimingInfo();
+    }
+
+    // Calculate next update time (5 seconds after top of minute)
+    function getNextUpdateTime() {
+      const now = new Date();
+      const currentMinute = new Date(now);
+      currentMinute.setSeconds(5);
+      currentMinute.setMilliseconds(0);
+      
+      if (now <= currentMinute) {
+        // We're still at or before :05 of the current minute, so target is :05 of current minute
+        return currentMinute;
+      } else {
+        // We've passed :05 of the current minute, so target is :05 of the next minute
+        const nextMinute = new Date(now);
+        nextMinute.setMinutes(nextMinute.getMinutes() + 1);
+        nextMinute.setSeconds(5);
+        nextMinute.setMilliseconds(0);
+        return nextMinute;
+      }
+    }
+
+    // Calculate seconds until next event
+    function getSecondsUntil(targetDate) {
+      const now = new Date();
+      const diff = targetDate - now;
+      return Math.max(0, Math.ceil(diff / 1000));
+    }
+
+    // Format seconds to "Xm Ys" or just "Xs"
+    function formatCountdown(seconds) {
+      if (seconds <= 0) return "0s";
+      if (seconds < 59) return seconds + "s";
+      if (seconds === 59) return "1m";
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      if (secs === 0) return mins + "m";
+      return mins + "m " + secs + "s";
+    }
+
+    // Calculate next forecast update time (at 02, 17, 32, 47 minutes past hour)
+    function getNextForecastUpdateTime() {
+      const now = new Date();
+      const minute = now.getMinutes();
+      const second = now.getSeconds();
+      
+      // Forecast updates at :02, :17, :32, :47
+      const forecastMinutes = [2, 17, 32, 47];
+      let nextForecastMin = null;
+      
+      // Find next forecast minute in current hour
+      for (let fm of forecastMinutes) {
+        if (fm > minute || (fm === minute && second < 0)) {
+          nextForecastMin = fm;
+          break;
+        }
+      }
+      
+      // If not found in current hour, use first minute of next hour
+      if (nextForecastMin === null) {
+        nextForecastMin = 2;
+        const next = new Date(now);
+        next.setHours(next.getHours() + 1);
+        next.setMinutes(nextForecastMin);
+        next.setSeconds(0);
+        next.setMilliseconds(0);
+        return next;
+      }
+      
+      // Found in current hour
+      const next = new Date(now);
+      next.setMinutes(nextForecastMin);
+      next.setSeconds(0);
+      next.setMilliseconds(0);
+      return next;
+    }
+
+    // Update the timing info display
+    function updateTimingInfo() {
+      // Obs start time
+      if (lastObsStartTime) {
+        const obsStartStr = new Date(lastObsStartTime * 1000).toLocaleString();
+        document.getElementById('obs-start').textContent = obsStartStr;
+      }
+      
+      // Next obs update countdown
+      const nextObsTime = getNextUpdateTime();
+      const secsToObs = getSecondsUntil(nextObsTime);
+      document.getElementById('next-obs-update').textContent = formatCountdown(secsToObs);
+      
+      // Next forecast update countdown
+      const nextForecastTime = getNextForecastUpdateTime();
+      const secsToForecast = getSecondsUntil(nextForecastTime);
+      document.getElementById('next-forecast-update').textContent = formatCountdown(secsToForecast);
+    }
+
+    // Update clock immediately and then every second
+    updateClock();
+    setInterval(updateClock, 1000);
+    // temperature color map from CSV
+    const tempColorMap = [
+      {temp:-61,r:44,g:90,b:114},{temp:-60,r:44,g:91,b:123},{temp:-59,r:54,g:101,b:128},{temp:-58,r:66,g:112,b:139},{temp:-57,r:73,g:124,b:143},{temp:-56,r:81,g:123,b:147},{temp:-55,r:84,g:127,b:146},{temp:-54,r:87,g:133,b:147},{temp:-53,r:95,g:148,b:161},{temp:-52,r:107,g:156,b:167},{temp:-51,r:110,g:161,b:169},{temp:-50,r:120,g:167,b:175},{temp:-49,r:125,g:177,b:181},{temp:-48,r:131,g:185,b:185},{temp:-47,r:135,g:187,b:188},{temp:-46,r:153,g:203,b:202},{temp:-45,r:154,g:203,b:201},{temp:-44,r:160,g:206,b:209},{temp:-43,r:170,g:220,b:219},{temp:-42,r:178,g:225,b:221},{temp:-41,r:177,g:233,b:224},{temp:-40,r:180,g:231,b:225},{temp:-39,r:177,g:233,b:223},{temp:-38,r:171,g:222,b:219},{temp:-37,r:170,g:216,b:216},{temp:-36,r:173,g:214,b:217},{temp:-35,r:168,g:209,b:217},{temp:-34,r:169,g:207,b:215},{temp:-33,r:165,g:195,b:217},{temp:-32,r:170,g:199,b:219},{temp:-31,r:162,g:193,b:213},{temp:-30,r:164,g:186,b:215},{temp:-29,r:163,g:184,b:213},{temp:-28,r:154,g:168,b:201},{temp:-27,r:158,g:171,b:205},{temp:-26,r:154,g:163,b:206},{temp:-25,r:152,g:153,b:200},{temp:-24,r:151,g:153,b:202},{temp:-23,r:149,g:149,b:199},{temp:-22,r:151,g:147,b:197},{temp:-21,r:145,g:129,b:190},{temp:-20,r:144,g:127,b:187},{temp:-19,r:147,g:126,b:194},{temp:-18,r:145,g:127,b:189},{temp:-17,r:147,g:122,b:193},{temp:-16,r:138,g:105,b:186},{temp:-15,r:138,g:103,b:185},{temp:-14,r:140,g:99,b:182},{temp:-13,r:140,g:98,b:183},{temp:-12,r:130,g:88,b:177},{temp:-11,r:135,g:90,b:182},{temp:-10,r:131,g:78,b:183},{temp:-9,r:126,g:73,b:178},{temp:-8,r:131,g:71,b:175},{temp:-7,r:127,g:60,b:174},{temp:-6,r:129,g:59,b:173},{temp:-5,r:128,g:54,b:173},{temp:-4,r:122,g:42,b:168},{temp:-3,r:121,g:38,b:170},{temp:-2,r:120,g:39,b:169},{temp:-1,r:121,g:38,b:172},{temp:0,r:157,g:64,b:173},{temp:1,r:156,g:64,b:172},{temp:2,r:170,g:86,b:185},{temp:3,r:165,g:97,b:182},{temp:4,r:166,g:103,b:183},{temp:5,r:174,g:113,b:189},{temp:6,r:181,g:128,b:198},{temp:7,r:184,g:145,b:203},{temp:8,r:194,g:162,b:213},{temp:9,r:194,g:165,b:210},{temp:10,r:190,g:178,b:213},{temp:11,r:191,g:182,b:203},{temp:12,r:206,g:208,b:226},{temp:13,r:210,g:219,b:229},{temp:14,r:211,g:221,b:229},{temp:15,r:223,g:232,b:237},{temp:16,r:210,g:222,b:232},{temp:17,r:192,g:212,b:223},{temp:18,r:184,g:207,b:230},{temp:19,r:177,g:201,b:225},{temp:20,r:165,g:191,b:216},{temp:21,r:154,g:174,b:209},{temp:22,r:135,g:163,b:203},{temp:23,r:111,g:148,b:204},{temp:24,r:109,g:148,b:205},{temp:25,r:104,g:143,b:208},{temp:26,r:84,g:127,b:193},{temp:27,r:71,g:120,b:189},{temp:28,r:67,g:116,b:185},{temp:29,r:56,g:104,b:186},{temp:30,r:38,g:89,b:175},{temp:31,r:38,g:89,b:178},{temp:32,r:19,g:68,b:84},{temp:33,r:27,g:76,b:88},{temp:34,r:44,g:85,b:94},{temp:35,r:55,g:97,b:100},{temp:36,r:69,g:108,b:103},{temp:37,r:82,g:120,b:109},{temp:38,r:95,g:129,b:113},{temp:39,r:108,g:140,b:117},{temp:40,r:122,g:150,b:125},{temp:41,r:136,g:160,b:128},{temp:42,r:150,g:170,b:133},{temp:43,r:162,g:181,b:140},{temp:44,r:175,g:191,b:144},{temp:45,r:189,g:200,b:150},{temp:46,r:204,g:210,b:154},{temp:47,r:217,g:223,b:161},{temp:48,r:227,g:231,b:159},{temp:49,r:244,g:242,b:165},{temp:50,r:247,g:238,b:159},{temp:51,r:239,g:225,b:152},{temp:52,r:234,g:213,b:145},{temp:53,r:225,g:200,b:138},{temp:54,r:217,g:188,b:128},{temp:55,r:210,g:175,b:119},{temp:56,r:200,g:163,b:110},{temp:57,r:191,g:150,b:103},{temp:58,r:186,g:137,b:94},{temp:59,r:179,g:124,b:83},{temp:60,r:169,g:113,b:77},{temp:61,r:162,g:100,b:69},{temp:62,r:156,g:88,b:61},{temp:63,r:145,g:76,b:53},{temp:64,r:140,g:62,b:41},{temp:65,r:130,g:50,b:33},{temp:66,r:123,g:38,b:27},{temp:67,r:115,g:25,b:17},{temp:68,r:108,g:13,b:9},{temp:69,r:101,g:0,b:0},{temp:70,r:95,g:0,b:0},{temp:71,r:98,g:5,b:5},{temp:72,r:102,g:10,b:13},{temp:73,r:108,g:14,b:20},{temp:74,r:112,g:19,b:27},{temp:75,r:116,g:24,b:35},{temp:76,r:120,g:29,b:45},{temp:77,r:125,g:34,b:51},{temp:78,r:130,g:38,b:57},{temp:79,r:134,g:44,b:64},{temp:80,r:115,g:55,b:45},{temp:81,r:124,g:63,b:53},{temp:82,r:127,g:73,b:63},{temp:83,r:135,g:82,b:72},{temp:84,r:142,g:92,b:83},{temp:85,r:148,g:101,b:91},{temp:86,r:153,g:111,b:99},{temp:87,r:162,g:119,b:110},{temp:88,r:166,g:130,b:120},{temp:89,r:175,g:138,b:128},{temp:90,r:181,g:146,b:138},{temp:91,r:189,g:155,b:144},{temp:92,r:193,g:166,b:155},{temp:93,r:199,g:175,b:165},{temp:94,r:202,g:185,b:177},{temp:95,r:202,g:189,b:179},{temp:96,r:220,g:215,b:184},{temp:97,r:225,g:220,b:193},{temp:98,r:216,g:206,b:208},{temp:99,r:237,g:236,b:214},{temp:100,r:223,g:220,b:215},{temp:101,r:222,g:215,b:215},{temp:102,r:215,g:212,b:192},{temp:103,r:206,g:195,b:191},{temp:104,r:200,g:189,b:185},{temp:105,r:189,g:182,b:176},{temp:106,r:182,g:172,b:169},{temp:107,r:177,g:166,b:162},{temp:108,r:164,g:162,b:159},{temp:109,r:156,g:153,b:153},{temp:110,r:146,g:145,b:143},{temp:111,r:141,g:139,b:136},{temp:112,r:133,g:131,b:130},{temp:113,r:122,g:121,b:119},{temp:114,r:117,g:116,b:114},{temp:115,r:112,g:111,b:109},{temp:116,r:100,g:98,b:97},{temp:117,r:96,g:96,b:94},{temp:118,r:86,g:88,b:85},{temp:119,r:77,g:80,b:77},{temp:120,r:70,g:70,b:70}
+    ];
+    // Fetch last 24h data (used for deltas or short-range slicing)
+    async function fetchTempData() {
+      const now = Math.floor(Date.now() / 1000);
+      const start = now - 86400;
+      const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
+        `?time_start=${start}&time_end=${now}&format=csv&api_key=${API_KEY}`;
+      return fetchCsvData(url);
+    }
+
+    // Fetch data for an arbitrary range (seconds). If range is <=24h we simply
+    // grab the last 24h and slice it locally. For longer ranges we perform multiple
+    // 24h API calls and concatenate the results.
+    async function fetchTempDataRange(rangeSeconds) {
+      const now = Math.floor(Date.now() / 1000);
+      if (rangeSeconds <= 86400) {
+        const full = await fetchTempData();
+        const cutoff = now - rangeSeconds;
+        return full.filter(d => d.ts >= cutoff);
+      }
+
+      let all = [];
+      let start = now - rangeSeconds;
+      while (start < now) {
+        const end = Math.min(start + 86400, now);
+        const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
+          `?time_start=${start}&time_end=${end}&format=csv&api_key=${API_KEY}`;
+        all = all.concat(await fetchCsvData(url));
+        start = end;
+      }
+      return all;
+    }
+
+    // Fetch data between two unix timestamps (inclusive).  Works in 24h increments.
+    async function fetchTempDataBetween(startTs, endTs) {
+      if (startTs >= endTs) return [];
+      let all = [];
+      let cur = startTs;
+      while (cur < endTs) {
+        const chunkEnd = Math.min(cur + 86400, endTs);
+        all = all.concat(await fetchCsvData(`https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}?time_start=${cur}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`));
+        cur = chunkEnd;
+      }
+      return all;
+    }
+
+    // --- forecast support --------------------------------------------------
+    let lastForecastMinutely = null;
+    let lastForecastHourlyNbm = null;
+    let lastForecastHourlyGfs = null;
+    let lastForecastHourlySeasonal = null;
+    let lastForecastFetchTsMinutely = 0; // ms since epoch
+    let lastForecastFetchTsHourlyNbm = 0; // ms since epoch
+    let lastForecastFetchTsHourlyGfs = 0; // ms since epoch
+    let lastForecastFetchTsHourlySeasonal = 0; // ms since epoch
+
+    async function fetchForecastData() {
+      // Open-Meteo request returning 15‑min resolution forecast (up to ~24h)
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&minutely_15=temperature_2m&timezone=America%2FNew_York&temperature_unit=fahrenheit&forecast_minutely_15=96";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.minutely_15 || !j.minutely_15.time) return [];
+      const times = j.minutely_15.time;
+      const temps = j.minutely_15.temperature_2m;
+      const result = [];
+      for (let i = 0; i < times.length; i++) {
+        result.push({
+          ts: Math.floor(new Date(times[i]).getTime() / 1000),
+          tempF: parseFloat(temps[i])
+        });
+      }
+      return result;
+    }
+
+    async function fetchForecastHourlyModel(model, forecastDays) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=${model}&forecast_days=${forecastDays}&temperature_unit=fahrenheit`;
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) return [];
+      const times = j.hourly.time;
+      const temps = j.hourly.temperature_2m || [];
+      return times.map((t, i) => ({ ts: Math.floor(new Date(t).getTime() / 1000), tempF: parseFloat(temps[i]) })).filter(p => Number.isFinite(p.tempF));
+    }
+
+    async function fetchForecastDataHourlyNbm() {
+      return fetchForecastHourlyModel('ncep_nbm_conus', 10);
+    }
+
+    async function fetchForecastDataHourlyGfs() {
+      return fetchForecastHourlyModel('gfs_seamless', 16);
+    }
+
+    async function fetchForecastDataSeasonal() {
+      const url = "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_seasonal_ensemble_mean_seamless&temporal_resolution=hourly_1&forecast_days=214&temperature_unit=fahrenheit";
+      const resp = await fetch(url);
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) return [];
+      const times = j.hourly.time;
+      const temps = j.hourly.temperature_2m || [];
+      return times.map((t, i) => ({ ts: Math.floor(new Date(t).getTime() / 1000), tempF: parseFloat(temps[i]) })).filter(p => Number.isFinite(p.tempF));
+    }
+
+    async function fetchAllForecasts() {
+      const now = Date.now();
+      if (!lastForecastMinutely || now - lastForecastFetchTsMinutely > 15*60*1000) {
+        lastForecastMinutely = await fetchForecastData();
+        lastForecastFetchTsMinutely = now;
+      }
+      if (!lastForecastHourlyNbm || now - lastForecastFetchTsHourlyNbm > 60*60*1000) {
+        lastForecastHourlyNbm = await fetchForecastDataHourlyNbm();
+        lastForecastFetchTsHourlyNbm = now;
+      }
+      if (!lastForecastHourlyGfs || now - lastForecastFetchTsHourlyGfs > 60*60*1000) {
+        lastForecastHourlyGfs = await fetchForecastDataHourlyGfs();
+        lastForecastFetchTsHourlyGfs = now;
+      }
+      if (!lastForecastHourlySeasonal || now - lastForecastFetchTsHourlySeasonal > 24*60*60*1000) {
+        lastForecastHourlySeasonal = await fetchForecastDataSeasonal();
+        lastForecastFetchTsHourlySeasonal = now;
+      }
+    }
+
+    // Update dashboard
+    async function updateDashboard() {
+      // always fetch 24h of data for current/delta display
+      const fullData = await fetchTempData();
+      if (!fullData.length) return;
+      
+      // Capture observation start time (first data point is oldest)
+      // lastObsStartTime = fullData[0].ts;  // OLD: always 24h ago
+      lastObsTime = fullData[fullData.length - 1].ts;
+      
+      const latest = fullData[fullData.length - 1];
+      await fetchAllForecasts();
+      const currentTemp = latest.tempF;
+      const currentTimeStr = new Date(latest.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      // Initialize offset variables
+      let nbmOffset = '--';
+      let gfsOffset = '--';
+      let seasonalOffset = '--';
+
+      // Calculate forecast deltas for seamless transitions
+      let hrrrDelta = '--';
+      if (lastForecastMinutely && lastForecastMinutely.length > 0) {
+        hrrrDelta = (currentTemp - lastForecastMinutely[0].tempF).toFixed(1) + '°F';
+      }
+      // NBM, GFS, Seasonal offsets are captured during adjustment above
+
+      // Initialize forecast info
+      let forecastEndTime = null;
+      let thresholdReachTime = null;
+      let thresholdValue = null;
+
+      const nowTs = latest.ts;
+      const fivePast = fullData.find(d => d.ts >= nowTs - 5 * 60) || fullData[0];
+      const delta5 = (currentTemp - fivePast.tempF);
+      let trendChar = '→';
+      let trendClass = 'trend-flat';
+      if (delta5 > 0.1) { trendChar = '▲'; trendClass = 'trend-up'; }
+      else if (delta5 < -0.1) { trendChar = '▼'; trendClass = 'trend-down'; }
+      // read color mode controls early so current color can respect it
+      const colorMode = document.getElementById('color-mode')?.value || 'temp';
+      const thresholdResync = arguments[0] === true;
+      const deltaWindow = parseInt(document.getElementById('delta-window')?.value || '5');
+
+      function tempToColor(temp){
+        const t = Math.floor(temp);
+        if (t <= tempColorMap[0].temp) {
+          const c = tempColorMap[0];
+          return `rgb(${c.r},${c.g},${c.b})`;
+        }
+        if (t >= tempColorMap[tempColorMap.length-1].temp) {
+          const c = tempColorMap[tempColorMap.length-1];
+          return `rgb(${c.r},${c.g},${c.b})`;
+        }
+        let lo=0, hi=tempColorMap.length-1;
+        while(lo<=hi){
+          const mid=Math.floor((lo+hi)/2);
+          if(tempColorMap[mid].temp===t){
+            const c=tempColorMap[mid];
+            return `rgb(${c.r},${c.g},${c.b})`;
+          }
+          if(tempColorMap[mid].temp < t) lo=mid+1;
+          else hi=mid-1;
+        }
+        const c1=tempColorMap[hi], c2=tempColorMap[lo];
+        const frac=(t-c1.temp)/(c2.temp-c1.temp);
+        const r=Math.round(c1.r+frac*(c2.r-c1.r));
+        const g=Math.round(c1.g+frac*(c2.g-c1.g));
+        const b=Math.round(c1.b+frac*(c2.b-c1.b));
+        return `rgb(${r},${g},${b})`;
+      }
+
+      // Delta thresholds for different time frames (in minutes)
+      const deltaThresholds = {
+        1: 0.5,
+        5: 1,
+        15: 2,
+        30: 3,
+        60: 5,
+        180: 7,
+        360: 7,
+        720: 12,
+        1440: 20
+      };
+
+      function deltaToColor(delta, minutes = 5){
+        const maxD = deltaThresholds[minutes] || 10;
+        const mag = Math.min(maxD, Math.abs(delta));
+        const sat = Math.round((mag / maxD) * 90);
+        if (Math.abs(delta) < 0.075) return 'var(--muted)';
+        if (delta > 0){ return `hsl(0, ${sat}%, 52%)`; }
+        return `hsl(220, ${sat}%, 52%)`;
+      }
+
+      let currentColor;
+      if (colorMode === 'temp') {
+        currentColor = tempToColor(currentTemp);
+      } else if (colorMode === 'delta') {
+        currentColor = deltaToColor(delta5, deltaWindow);
+      } else if (colorMode === 'trend') {
+        // look back 10 minutes for trend
+        const targetTs = nowTs - 10 * 60;
+        const past10 = fullData.find(d => d.ts >= targetTs) || fullData[0];
+        const diff10 = currentTemp - past10.tempF;
+        if (diff10 > 0) currentColor = 'red';
+        else if (diff10 < 0) currentColor = 'blue';
+        else currentColor = 'grey';
+      } else {
+        currentColor = tempToColor(currentTemp);
+      }
+
+      function formatLabel(min){
+        if (min >= 1440) return (min/1440) + 'd';
+        if (min >= 60) return (min/60) + 'h';
+        return min + 'm';
+      }
+
+      const deltaBoxes = document.querySelectorAll('.delta-box');
+      deltaBoxes.forEach(box => {
+        const minutes = parseInt(box.dataset.minutes);
+        const targetTs = nowTs - minutes * 60;
+        const past = fullData.find(d => d.ts >= targetTs) || fullData[0];
+        const delta = (currentTemp - past.tempF).toFixed(1);
+        const sign = delta >= 0 ? '+' : '';
+        const pastTime = new Date(past.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const pastTemp = past.tempF.toFixed(1);
+        const label = formatLabel(minutes);
+        box.innerHTML = `
+          <div class="delta-left">
+            <div class="delta-min">${label}</div>
+            <div class="delta-min-time">${pastTime}</div>
+          </div>
+          <div class="delta-main">
+            <div class="delta-amount" style="color:${deltaToColor(parseFloat(delta), minutes)};">${sign}${delta}°F</div>
+            <div class="delta-temp">${pastTemp}°F --> ${currentTemp}°F</div>
+          </div>
+        `;
+      });
+
+      // Update forecast offset displays
+      document.getElementById('hrrr-offset').textContent = hrrrDelta;
+      document.getElementById('nbm-offset').textContent = nbmOffset;
+      document.getElementById('gfs-offset').textContent = gfsOffset;
+      document.getElementById('seasonal-offset').textContent = seasonalOffset;
+
+      // determine if user provided explicit start/end timestamps
+      const startVal = document.getElementById('start-dt')?.value;
+      const endVal = document.getElementById('end-dt')?.value;
+      const syncObs = document.getElementById('sync-obs-forecast')?.checked;
+      const forecastEnabled = document.getElementById('show-forecast')?.checked;
+      const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+      const forecastHours = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+
+      let data;
+      if (startVal && endVal) {
+        const startTs = Math.floor(new Date(startVal).getTime()/1000);
+        const endTs = Math.floor(new Date(endVal).getTime()/1000);
+        data = await fetchTempDataBetween(startTs, endTs);
+      } else {
+        // compute requested range for graph or sync-to-forecast
+        let rangeSeconds;
+        if (syncObs && forecastEnabled && !useThreshold) {
+          rangeSeconds = forecastHours * 3600;
+        } else {
+          const val = parseFloat(document.getElementById('range-value')?.value) || 24;
+          const unit = document.getElementById('range-units')?.value || 'hours';
+          rangeSeconds = val;
+          if (unit === 'minutes') rangeSeconds *= 60;
+          else if (unit === 'hours') rangeSeconds *= 3600;
+          else if (unit === 'days') rangeSeconds *= 86400;
+        }
+        data = await fetchTempDataRange(rangeSeconds);
+      }
+      if (!data.length) return;
+
+      // NEW: Set obs start time to first dot on the graph
+      lastObsStartTime = data[0].ts;
+
+      let times = data.map(d => new Date(d.ts * 1000));
+      let temps = data.map(d => d.tempF);
+
+
+      let pointColors = [];
+      for (let i=0;i<data.length;i++){
+        const t = temps[i];
+        if (colorMode === 'temp'){
+          pointColors.push(tempToColor(t));
+        } else if (colorMode === 'delta') {
+          const targetTs = data[i].ts - deltaWindow*60;
+          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const dlt = t - past.tempF;
+          pointColors.push(deltaToColor(dlt, deltaWindow));
+        } else if (colorMode === 'trend') {
+          // use a fixed 10‑minute window to determine rising/ falling/flat
+          const trendWindow = 30 * 60; // seconds
+          const targetTs = data[i].ts - trendWindow;
+          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const dlt = t - past.tempF;
+          if (dlt > 0) {
+            pointColors.push('red');
+          } else if (dlt < 0) {
+            pointColors.push('blue');
+          } else {
+            pointColors.push('grey');
+          }
+        } else {
+          // fallback to temperature coloring
+          pointColors.push(tempToColor(t));
+        }
+      }
+
+      // reduce number of line segments when point count is large
+      let segTimes = times;
+      let segTemps = temps;
+      let segColors = pointColors;
+      if (times.length - 1 > 1000) {
+        const maxSeg = 1000;
+        const step = Math.ceil((times.length - 1) / maxSeg);
+        segTimes = [];
+        segTemps = [];
+        segColors = [];
+        for (let i = 0; i < times.length; i += step) {
+          segTimes.push(times[i]);
+          segTemps.push(temps[i]);
+          segColors.push(pointColors[i]);
+        }
+        // ensure the final point is included as endpoint
+        const lastIndex = times.length - 1;
+        if (segTimes[segTimes.length-1] !== times[lastIndex]) {
+          segTimes.push(times[lastIndex]);
+          segTemps.push(temps[lastIndex]);
+          segColors.push(pointColors[lastIndex]);
+        }
+      }
+
+      // build traces: one line segment per interval on the (possibly) reduced arrays
+      const traces = [];
+      for (let i = 0; i < segTimes.length - 1; i++) {
+        traces.push({
+          x: [segTimes[i], segTimes[i+1]],
+          y: [segTemps[i], segTemps[i+1]],
+          type: 'scatter',
+          mode: 'lines',
+          line: { color: segColors[i], width: 4 },
+          hoverinfo: 'none',
+          showlegend: false
+        });
+      }
+      // marker trace still uses full original data
+      traces.push({
+        x: times,
+        y: temps,
+        type: 'scatter',
+        mode: 'markers',
+        marker: { size: 6, color: pointColors }
+      });
+
+      // optionally add forecast line if requested
+      const showForecast = document.getElementById('show-forecast')?.checked;
+      if (!showForecast) {
+        forecastEndTime = null;
+        thresholdReachTime = null;
+        thresholdValue = null;
+      }
+      if (showForecast) {
+        const now = new Date();
+        const nowMs = now.getTime();
+        const minute = now.getMinutes();
+        const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+        const hoursLimit = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+        const useHourlyForecast = useThreshold || hoursLimit > 24;
+        console.log("Forecast check: useThreshold=", useThreshold, "hoursLimit=", hoursLimit, "useHourlyForecast=", useHourlyForecast);
+
+        // refresh only at 02,17,32,47 minutes past the hour or when we have no data yet
+        const needsTimeRefresh = minute % 15 === 2 && nowMs - lastForecastFetchTsMinutely > 5 * 60 * 1000;
+        const needMinutelyFetch = !lastForecastMinutely || needsTimeRefresh;
+        if (needMinutelyFetch) {
+          lastForecastMinutely = await fetchForecastData();
+          lastForecastFetchTsMinutely = nowMs;
+        }
+
+        const minutelyData = lastForecastMinutely || [];
+        let combinedForecast = minutelyData.slice();
+
+        // If we need longer than the minutely forecast portion, append hourly data (NBM -> GFS -> Seasonal)
+        if (useHourlyForecast) {
+          const maxForecastHours = 214 * 24; // seasonal API max
+          const endTs = useThreshold
+            ? (combinedForecast[0]?.ts || nowMs / 1000) + maxForecastHours * 3600
+            : (combinedForecast[0]?.ts || nowMs / 1000) + hoursLimit * 3600;
+
+          // 1) NBM
+          const needsNbmRefresh = !lastForecastHourlyNbm || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlyNbm > 5 * 60 * 1000);
+          if (needsNbmRefresh) {
+            lastForecastHourlyNbm = await fetchForecastDataHourlyNbm();
+            lastForecastFetchTsHourlyNbm = nowMs;
+          }
+
+          if (lastForecastHourlyNbm && lastForecastHourlyNbm.length) {
+            const lastMinutelyTs = minutelyData.length ? minutelyData[minutelyData.length - 1].ts : 0;
+            const startNbmIdx = lastForecastHourlyNbm.findIndex(d => d.ts > lastMinutelyTs);
+            if (startNbmIdx >= 0) {
+              combinedForecast = combinedForecast.concat(lastForecastHourlyNbm.slice(startNbmIdx));
+            } else {
+              combinedForecast = combinedForecast.concat(lastForecastHourlyNbm);
+            }
+          }
+
+          // 2) GFS - only if needed beyond NBM
+          const lastNbmTs = combinedForecast.length ? combinedForecast[combinedForecast.length - 1].ts : 0;
+          if (endTs > lastNbmTs) {
+            const needsGfsRefresh = !lastForecastHourlyGfs || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlyGfs > 5 * 60 * 1000);
+            if (needsGfsRefresh) {
+              lastForecastHourlyGfs = await fetchForecastDataHourlyGfs();
+              lastForecastFetchTsHourlyGfs = nowMs;
+            }
+
+            if (lastForecastHourlyGfs && lastForecastHourlyGfs.length) {
+              const startGfsIdx = lastForecastHourlyGfs.findIndex(d => d.ts > lastNbmTs);
+              if (startGfsIdx >= 0) {
+                combinedForecast = combinedForecast.concat(lastForecastHourlyGfs.slice(startGfsIdx));
+              } else {
+                combinedForecast = combinedForecast.concat(lastForecastHourlyGfs);
+              }
+            }
+          }
+
+          // 3) Seasonal - only if needed beyond GFS
+          const lastGfsTs = combinedForecast.length ? combinedForecast[combinedForecast.length - 1].ts : 0;
+          console.log("Checking seasonal: endTs=", endTs, "lastGfsTs=", lastGfsTs, "need seasonal?", endTs > lastGfsTs);
+          if (endTs > lastGfsTs) {
+            const needsSeasonalRefresh = !lastForecastHourlySeasonal || (minute % 15 === 2 && nowMs - lastForecastFetchTsHourlySeasonal > 5 * 60 * 1000);
+            console.log("Seasonal refresh needed:", needsSeasonalRefresh, "has cache:", !!lastForecastHourlySeasonal);
+            if (needsSeasonalRefresh) {
+              console.log("Fetching seasonal data...");
+              lastForecastHourlySeasonal = await fetchForecastDataSeasonal();
+              lastForecastFetchTsHourlySeasonal = nowMs;
+              console.log("Seasonal fetch complete, got:", lastForecastHourlySeasonal.length, "points");
+            }
+
+            if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
+              console.log("Adding seasonal to combinedForecast");
+              const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
+              if (startSeasonalIdx >= 0) {
+                combinedForecast = combinedForecast.concat(lastForecastHourlySeasonal.slice(startSeasonalIdx));
+              } else {
+                combinedForecast = combinedForecast.concat(lastForecastHourlySeasonal);
+              }
+            }
+          }
+        }
+
+        if (combinedForecast.length) {
+          // start forecast immediately after the last observed point
+          const lastObs = data[data.length - 1];
+
+          // build segments in order: minutely, NBM, GFS, seasonal
+          const segments = [];
+          let nbmSeg = null;
+          let gfsSeg = null;
+          let seasonalSeg = null;
+
+          // Include all minutely data from the start for verification
+          if (minutelyData && minutelyData.length > 0) {
+            segments.push(minutelyData.slice());
+          }
+
+          const lastMinutelyTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastObs.ts;
+
+          if (lastForecastHourlyNbm && lastForecastHourlyNbm.length) {
+            const startNbmIdx = lastForecastHourlyNbm.findIndex(d => d.ts > lastMinutelyTs);
+            if (startNbmIdx >= 0) {
+              nbmSeg = lastForecastHourlyNbm.slice(startNbmIdx);
+              segments.push(nbmSeg);
+            } else {
+              nbmSeg = lastForecastHourlyNbm.slice();
+              segments.push(nbmSeg);
+            }
+          }
+
+          const lastNbmTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastMinutelyTs;
+
+          if (lastForecastHourlyGfs && lastForecastHourlyGfs.length) {
+            const startGfsIdx = lastForecastHourlyGfs.findIndex(d => d.ts > lastNbmTs);
+            if (startGfsIdx >= 0) {
+              gfsSeg = lastForecastHourlyGfs.slice(startGfsIdx);
+              segments.push(gfsSeg);
+            } else {
+              gfsSeg = lastForecastHourlyGfs.slice();
+              segments.push(gfsSeg);
+            }
+          }
+
+          const lastGfsTs = segments.length ? segments[segments.length - 1].slice(-1)[0].ts : lastNbmTs;
+
+          if (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length) {
+            const startSeasonalIdx = lastForecastHourlySeasonal.findIndex(d => d.ts > lastGfsTs);
+            console.log("Seasonal segment: lastGfsTs=", lastGfsTs, "startSeasonalIdx=", startSeasonalIdx, "total seasonal points=", lastForecastHourlySeasonal.length);
+            if (startSeasonalIdx >= 0) {
+              console.log("Adding seasonal data from index:", startSeasonalIdx);
+              seasonalSeg = lastForecastHourlySeasonal.slice(startSeasonalIdx);
+              segments.push(seasonalSeg);
+            } else {
+              console.log("No data after lastGfsTs, adding all seasonal");
+              seasonalSeg = lastForecastHourlySeasonal.slice();
+              segments.push(seasonalSeg);
+            }
+          } else {
+            console.log("Seasonal data missing or empty");
+          }
+
+          // apply offsets so each segment lines up with the previous end point
+          // For the first segment (minutely), align to the observation at the forecast start time for verification
+          let prevTemp;
+          if (segments.length > 0 && segments[0].length > 0) {
+            const forecastStartTs = segments[0][0].ts;
+            // Find the observation at or before the forecast start time
+            const matchingObs = data.slice().reverse().find(d => d.ts <= forecastStartTs);
+            prevTemp = matchingObs ? matchingObs.tempF : lastObs.tempF;
+          } else {
+            prevTemp = lastObs.tempF;
+          }
+          console.log("Starting forecast adjustment with prevTemp=", prevTemp, "segments.length=", segments.length);
+          const adjustedForecast = [];
+          // When stitching different forecast products (NBM, GFS, Seasonal) we can get a
+          // sudden "delta" jump at the boundary. To avoid that, we gradually fade the
+          // offset to zero over a long transition window (30 days) *only for the seasonal segment*.
+          const taperSeconds = 60 * 24 * 3600; // 30 days
+          const seasonalSegment = (lastForecastHourlySeasonal && lastForecastHourlySeasonal.length)
+            ? segments[segments.length - 1]
+            : null;
+          let segmentIndex = 0;
+          for (const segment of segments) {
+            if (!segment || !segment.length) {
+              console.log("Skipping empty segment");
+              continue;
+            }
+            const offset = prevTemp - segment[0].tempF;
+            console.log("Segment adjustment: offset=", offset, "segment length=", segment.length);
+            if (segment === nbmSeg) nbmOffset = offset.toFixed(1) + '°F';
+            else if (segment === gfsSeg) gfsOffset = offset.toFixed(1) + '°F';
+            else if (segment === seasonalSeg) seasonalOffset = offset.toFixed(1) + '°F';
+            const startTs = segment[0].ts;
+            for (const pt of segment) {
+              const dt = pt.ts - startTs;
+              const taper = Math.min(1, dt / taperSeconds);
+              const currentOffset = segment === seasonalSegment ? offset * (1 - taper) : offset;
+              adjustedForecast.push({ ts: pt.ts, tempF: pt.tempF + currentOffset });
+            }
+            prevTemp = adjustedForecast[adjustedForecast.length - 1].tempF;
+            segmentIndex++;
+          }
+
+          console.log("After offset adjustment, adjustedForecast length=", adjustedForecast.length);
+
+          if (!adjustedForecast.length) {
+            console.log("No adjusted forecast data!");
+            return;
+          }
+
+          // slice based on user settings (threshold or hours limit)
+          let limited;
+          if (useThreshold) {
+            const threshold = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
+            let thresholdIndex = adjustedForecast.length;
+            for (let i = 0; i < adjustedForecast.length; i++) {
+              const adjustedTemp = adjustedForecast[i].tempF;
+              if (currentTemp >= threshold) {
+                if (adjustedTemp <= threshold) {
+                  thresholdIndex = i + 1;
+                  break;
+                }
+              } else {
+                if (adjustedTemp >= threshold) {
+                  thresholdIndex = i + 1;
+                  break;
+                }
+              }
+            }
+            limited = adjustedForecast.slice(0, thresholdIndex);
+          } else {
+            const endTs = adjustedForecast[0].ts + hoursLimit * 3600;
+            limited = adjustedForecast.filter(d => d.ts <= endTs);
+          }
+
+          console.log("Limited forecast:", limited.length, "points, from", new Date(limited[0].ts * 1000), "to", new Date(limited[limited.length-1].ts * 1000));
+
+          // If sync is enabled and threshold mode is active, align obs range to forecast span
+          if (syncObs && useThreshold && limited.length && !thresholdResync) {
+            const forecastSpanSeconds = limited[limited.length - 1].ts - limited[0].ts;
+            if (forecastSpanSeconds > 0) {
+              const forecastSpanHours = forecastSpanSeconds / 3600;
+              if (forecastSpanHours >= 1) {
+                const roundedHours = Number.isInteger(forecastSpanHours) ? forecastSpanHours : Number(forecastSpanHours.toFixed(2));
+                document.getElementById('range-value').value = roundedHours;
+                document.getElementById('range-units').value = 'hours';
+              } else {
+                const forecastSpanMinutes = Math.max(1, Math.ceil(forecastSpanSeconds / 60));
+                document.getElementById('range-value').value = forecastSpanMinutes;
+                document.getElementById('range-units').value = 'minutes';
+              }
+
+              // Re-run the update now that range controls reflect forecast span.
+              await updateDashboard(true);
+              return;
+            }
+          }
+
+          // Set forecast info
+          forecastEndTime = new Date(limited[limited.length-1].ts * 1000).toLocaleString();
+          if (useThreshold) {
+            thresholdValue = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
+            thresholdReachTime = new Date(limited[limited.length-1].ts * 1000).toLocaleString();
+          }
+
+          const fcTimes = limited.map(d => new Date(d.ts * 1000));
+          const fcTemps = limited.map(d => d.tempF);
+          traces.push({
+            x: fcTimes,
+            y: fcTemps,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'grey', width: 2, dash: 'dash' },
+            name: 'Forecast'
+          });
+        }
+      }
+
+      Plotly.newPlot('temp-graph', traces, {
+        margin: { t: 30, r: 30, l: 50, b: 50 },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        font: { color: '#e0e0e0' },
+        xaxis: { title: 'Time' },
+        yaxis: { title: 'Temperature °F' }
+      }, { responsive: true });
+
+      // Update current temp display with observed time only
+      const tempTimeHtml = `<span class="temp-info-label">Observed:</span> ${currentTimeStr}`;
+      document.querySelector("#current-temp .temp-value").innerHTML = `<span class="trend ${trendClass}">${trendChar}</span>${currentTemp.toFixed(1)}°F`;
+      document.querySelector("#current-temp .temp-value").style.color = currentColor;
+      document.querySelector("#current-temp .temp-time").innerHTML = tempTimeHtml;
+
+      // Update clock info with forecast details
+      const forecastRow = document.getElementById('forecast-row');
+      const thresholdRow = document.getElementById('threshold-row');
+      const forecastEndEl = document.getElementById('forecast-end');
+      const forecastEndLabelEl = document.getElementById('forecast-end-label');
+      const thresholdReachEl = document.getElementById('threshold-reach');
+      const thresholdReachLabelEl = document.getElementById('threshold-reach-label');
+
+      if (forecastEndEl) {
+        forecastEndEl.textContent = forecastEndTime || '--';
+      }
+      if (forecastEndLabelEl) {
+        forecastEndLabelEl.textContent = 'Forecast ends: ';
+      }
+      if (forecastRow) {
+        forecastRow.style.display = (forecastEndTime && !thresholdValue) ? 'flex' : 'none';
+      }
+
+      if (thresholdReachLabelEl) {
+        thresholdReachLabelEl.textContent = thresholdValue ? `${thresholdValue}° will be reached: ` : '';
+      }
+      if (thresholdReachEl) {
+        thresholdReachEl.textContent = thresholdReachTime || '--';
+      }
+      if (thresholdRow) {
+        thresholdRow.style.display = (thresholdReachTime && thresholdValue !== null) ? 'flex' : 'none';
+      }
+    }
+    // Fullscreen toggle
+    function toggleFullscreen() {
+      const container = document.getElementById('temp-graph-container');
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => alert(err));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+    // Initial load
+    updateDashboard();
+    // set initial visibility for controls
+    updateForecastControls();
+    updateThresholdControls();
+    updateSyncControls();
+    updateRangeFieldsVisibility();
+
+    function deltaColor() {
+      const colormode = document.getElementById('color-mode');
+      const deltaWindow = document.getElementById('delta-window');
+      deltaWindow.style.display = colormode?.value === 'delta' ? 'block' : 'none';
+    }
+
+    deltaColor();
+
+    // manage visibility of forecast-related controls
+    function updateForecastControls() {
+      const showFc = document.getElementById('show-forecast').checked;
+      const forecastHours = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+      document.getElementById('forecast-hours-wrapper').style.display = showFc ? 'flex' : 'none';
+      document.getElementById('forecast-threshold-checkbox-wrapper').style.display = showFc ? 'flex' : 'none';
+      document.getElementById('sync-obs-forecast-wrapper').style.display = showFc ? 'flex' : 'none';
+      // Hide/show offset rows based on forecast
+      const offsetRows = ['hrrr-offset-row', 'nbm-offset-row', 'gfs-offset-row', 'seasonal-offset-row'];
+      if (!showFc) {
+        offsetRows.forEach(id => document.getElementById(id).style.display = 'none');
+      } else {
+        // HRRR is used for any forecast
+        document.getElementById('hrrr-offset-row').style.display = 'block';
+        // NBM after 24hr
+        document.getElementById('nbm-offset-row').style.display = forecastHours > 24 ? 'block' : 'none';
+        // GFS after 7 days (168hr)
+        document.getElementById('gfs-offset-row').style.display = forecastHours > 168 ? 'block' : 'none';
+        // Seasonal after 30 days (720hr)
+        document.getElementById('seasonal-offset-row').style.display = forecastHours > 720 ? 'block' : 'none';
+      }
+      // threshold value visibility also depends on threshold checkbox
+      updateThresholdControls();
+      updateSyncControls();
+    }
+
+    // show/hide threshold number input based on checkbox and forecast visibility
+    function updateThresholdControls() {
+      const useThresh = document.getElementById('use-forecast-threshold').checked;
+      const showFc = document.getElementById('show-forecast').checked;
+      // Hide forecast-hours when threshold is on
+      document.getElementById('forecast-hours-wrapper').style.display = (showFc && !useThresh) ? 'flex' : 'none';
+      document.getElementById('forecast-threshold-wrapper').style.display = (useThresh && showFc) ? 'flex' : 'none';
+      document.getElementById('forecast-threshold').disabled = !useThresh;
+      updateSyncControls();
+    }
+
+    // update visibility of graph-range vs forecast-hours when sync is enabled
+    function updateSyncControls() {
+      const sync = document.getElementById('sync-obs-forecast').checked;
+      const showFc = document.getElementById('show-forecast').checked;
+      const useThresh = document.getElementById('use-forecast-threshold').checked;
+
+      if (!showFc || !sync) {
+        // show graph-range input when sync is off or forecast is disabled
+        document.getElementById('graph-range-wrapper').style.display = 'flex';
+        // if forecast is off, forecast inputs are hidden by forecast controls
+        return;
+      }
+
+      if (useThresh) {
+        // threshold sync hides graph range controls and forecast hours
+        document.getElementById('graph-range-wrapper').style.display = 'none';
+        document.getElementById('forecast-hours-wrapper').style.display = 'none';
+      } else {
+        // non-threshold sync uses forecast hours as obs range
+        document.getElementById('graph-range-wrapper').style.display = 'flex';
+        document.getElementById('forecast-hours-wrapper').style.display = 'none';
+
+        const forecastHoursValue = parseInt(document.getElementById('forecast-hours')?.value) || 12;
+        document.getElementById('range-value').value = forecastHoursValue;
+        document.getElementById('range-units').value = 'hours';
+        document.getElementById('forecast-hours').value = forecastHoursValue;
+      }
+    }
+
+    function updateRangeFieldsVisibility() {
+      const showRange = document.getElementById('show-range-fields').checked;
+      document.getElementById('range-fields').style.display = showRange ? 'flex' : 'none';
+    }
+    // replot when color mode or window changes
+    document.getElementById('color-mode').addEventListener('change', updateDashboard);
+    document.getElementById('color-mode').addEventListener('change', deltaColor);
+    document.getElementById('delta-window').addEventListener('change', updateDashboard);
+    document.getElementById('range-value').addEventListener('change', () => {
+      const syncObs = document.getElementById('sync-obs-forecast')?.checked;
+      const showFc = document.getElementById('show-forecast')?.checked;
+      const useThresh = document.getElementById('use-forecast-threshold')?.checked;
+      if (syncObs && showFc && !useThresh) {
+        const val = parseInt(document.getElementById('range-value')?.value) || 12;
+        document.getElementById('forecast-hours').value = val;
+      }
+      updateDashboard();
+    });
+    document.getElementById('range-units').addEventListener('change', updateDashboard);
+    document.getElementById('start-dt').addEventListener('change', updateDashboard);
+    document.getElementById('end-dt').addEventListener('change', updateDashboard);
+    document.getElementById('apply-range').addEventListener('click', updateDashboard);
+    document.getElementById('show-forecast').addEventListener('change', updateDashboard);
+    document.getElementById('show-forecast').addEventListener('change', updateForecastControls);
+    document.getElementById('forecast-hours').addEventListener('change', () => {
+      updateSyncControls();
+      updateForecastControls();
+      updateDashboard();
+    });
+    document.getElementById('use-forecast-threshold').addEventListener('change', (e) => {
+      updateThresholdControls();
+      updateDashboard();
+    });
+    document.getElementById('sync-obs-forecast').addEventListener('change', () => {
+      updateSyncControls();
+      updateDashboard();
+    });
+    document.getElementById('forecast-threshold').addEventListener('change', updateDashboard);
+    document.getElementById('show-range-fields').addEventListener('change', () => {
+      updateRangeFieldsVisibility();
+    });
+    
+    // Schedule updates for 5 seconds after top of minute
+    let updateTimer = null;
+    
+    function scheduleNextUpdate() {
+      // Clear any existing timer
+      if (updateTimer) clearTimeout(updateTimer);
+      
+      const now = new Date();
+      const currentMinute = now.getMinutes();
+      const currentSecond = now.getSeconds();
+      const currentMs = now.getMilliseconds();
+      
+      // Calculate milliseconds until next ":05" (5 seconds after top of minute)
+      let nextUpdateMs;
+      
+      if (currentSecond < 5 || (currentSecond === 5 && currentMs < 0)) {
+        // Next update is in the current minute at :05
+        nextUpdateMs = (5 - currentSecond) * 1000 - currentMs;
+      } else {
+        // Next update is in the next minute at :05
+        nextUpdateMs = (60 - currentSecond + 5) * 1000 - currentMs;
+      }
+      
+      // Ensure we have a positive value
+      nextUpdateMs = Math.max(100, nextUpdateMs);
+      
+      // Schedule this update
+      updateTimer = setTimeout(() => {
+        updateDashboard();
+        // After update, schedule the next one
+        scheduleNextUpdate();
+      }, nextUpdateMs);
+    }
+    
+    // Start the scheduled updates
+    scheduleNextUpdate();
+  </script>
+
+</body>
+
+</html>
