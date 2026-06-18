@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Route Tracker with Real GPS</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <style>
+        body { margin: 0; font-family: Arial; }
+        #controls { padding: 10px; background: #f0f0f0; }
+        #map { height: 80vh; }
+        #info { padding: 10px; background: #eee; font-family: monospace; }
+        input { width: 120px; margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    Start Time (HH:MM:SS): <input type="text" id="startTime" placeholder="17:00:00">
+    End Time (HH:MM:SS): <input type="text" id="endTime" placeholder="18:00:00">
+    Duration (seconds or HH:MM:SS): <input type="text" id="duration" placeholder="3600">
+    <label><input type="checkbox" id="pauseUpdates"> Pause updates</label>
+    <button onclick="startTracking()">Start Tracking</button>
+</div>
+
+<div id="map"></div>
+<div id="info">GPS info will appear here...</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([42.02, -76.21], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let points = [];
+let routeLine = null;
+let redMarker = null;
+let greenMarker = null;
+let intervalId = null;
+
+let lastGPS = null;
+let currentSpeedMph = 0;
+let totalRouteDistance = 0;
+const speedSamples = [];
+const SMOOTH_WINDOW_MS = 5000;
+
+const infoDiv = document.getElementById('info');
+const pauseCheckbox = document.getElementById('pauseUpdates');
+
+// Convert HH:MM:SS or seconds to seconds
+function timeToSeconds(t) {
+    if (!t) return null;
+    const parts = t.split(':').map(Number);
+    if (parts.length === 1) return Number(parts[0]);
+    return parts[0]*3600 + parts[1]*60 + (parts[2] || 0);
+}
+
+// Convert seconds to HH:MM:SS
+function secondsToTime(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}
+
+// Linear interpolation
+function interpolatePoint(p1, p2, alpha) {
+    const lat = p1.lat + (p2.lat - p1.lat) * alpha;
+    const lon = p1.lon + (p2.lon - p1.lon) * alpha;
+    return [lat, lon];
+}
+
+function getCurrentPercent(startSec, endSec) {
+    const now = new Date();
+    const curSec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+
+    if (curSec <= startSec) return 0;
+    if (curSec >= endSec) return 100;
+
+    return ((curSec - startSec) / (endSec - startSec)) * 100;
+}
+
+// Haversine distance in miles
+function distanceMi(lat1, lon1, lat2, lon2) {
+    const R = 3958.8;
+    const toRad = Math.PI/180;
+    const dLat = (lat2-lat1)*toRad;
+    const dLon = (lon2-lon1)*toRad;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)**2;
+    const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R*c;
+}
+
+function getRouteSegmentAtPercent(percent) {
+    let p1 = points[0], p2 = points[points.length-1];
+    for (let i = 1; i < points.length; i++) {
+        if (points[i].percent >= percent) {
+            p1 = points[i-1];
+            p2 = points[i];
+            break;
+        }
+    }
+    const alpha = (percent - p1.percent) / (p2.percent - p1.percent || 1);
+    return { p1, p2, alpha };
+}
+
+function getSegmentTargetSpeed(percent, totalDurationHours) {
+    if (points.length < 2 || totalDurationHours <= 0) return 0;
+    const { p1, p2 } = getRouteSegmentAtPercent(percent);
+    const segmentMiles = distanceMi(p1.lat, p1.lon, p2.lat, p2.lon);
+    const segmentPercent = Math.abs(p2.percent - p1.percent) / 100;
+    const segmentHours = segmentPercent * totalDurationHours;
+    if (segmentHours <= 0) return totalRouteDistance / totalDurationHours;
+    return segmentMiles / segmentHours;
+}
+
+function smoothSpeedSample(speed, nowTime) {
+    speedSamples.push({ time: nowTime, speed });
+    const cutoff = nowTime - SMOOTH_WINDOW_MS;
+    while (speedSamples.length && speedSamples[0].time < cutoff) {
+        speedSamples.shift();
+    }
+    if (!speedSamples.length) return 0;
+    const total = speedSamples.reduce((sum, sample) => sum + sample.speed, 0);
+    return total / speedSamples.length;
+}
+
+function formatSpan(text, color) {
+    return `<span style="color:${color};">${text}</span>`;
+}
+
+function formatTimeColor(expectedSec, currentSec, content) {
+    return formatSpan(content, expectedSec > currentSec ? 'green' : 'red');
+}
+
+function updateRedDot(startSec, endSec) {
+    if (pauseCheckbox.checked) return;
+    const now = new Date();
+    const curSec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+    if (curSec < startSec || curSec > endSec) {
+        if (redMarker) map.removeLayer(redMarker);
+        return;
+    }
+
+    const totalDuration = endSec - startSec;
+    let percent = ((curSec - startSec)/totalDuration)*100;
+    percent = Math.max(0, Math.min(100, percent));
+
+    let p1 = points[0], p2 = points[points.length-1];
+    for (let i=1; i<points.length; i++) {
+        if (points[i].percent >= percent) {
+            p1 = points[i-1]; p2 = points[i];
+            break;
+        }
+    }
+
+    const alpha = (percent - p1.percent)/(p2.percent - p1.percent || 1);
+    const pos = interpolatePoint(p1, p2, alpha);
+
+    if (redMarker) map.removeLayer(redMarker);
+    redMarker = L.circleMarker(pos, {radius:8, color:'red'}).addTo(map);
+}
+
+function getDistanceAtPercent(percent) {
+    let p1 = points[0], p2 = points[points.length-1];
+
+    for (let i=1; i<points.length; i++) {
+        if (points[i].percent >= percent) {
+            p1 = points[i-1];
+            p2 = points[i];
+            break;
+        }
+    }
+
+    const alpha = (percent - p1.percent) / (p2.percent - p1.percent || 1);
+    return p1.cumDist + alpha * (p2.cumDist - p1.cumDist);
+}
+
+function snapToRoute(lat, lon, redPercent) {
+    let best = null;
+    let bestScore = Infinity;
+    const EPS = 0.00001;
+
+    for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+
+        const alpha = projectPointOnSegment(lat, lon, p1, p2);
+
+        const projLat = p1.lat + alpha * (p2.lat - p1.lat);
+        const projLon = p1.lon + alpha * (p2.lon - p1.lon);
+
+        const d = distanceMi(lat, lon, projLat, projLon);
+        const percent = p1.percent + alpha * (p2.percent - p1.percent);
+
+        let score = d;
+
+        if (best &&
+            Math.abs(projLat - best.lat) < EPS &&
+            Math.abs(projLon - best.lon) < EPS) {
+
+            const percentDiff = Math.abs(percent - redPercent);
+            const bestPercentDiff = Math.abs(best.percent - redPercent);
+
+            if (percentDiff < bestPercentDiff) {
+                best = { lat: projLat, lon: projLon, percent };
+            }
+            continue;
+        }
+
+        if (score < bestScore) {
+            bestScore = score;
+            best = { lat: projLat, lon: projLon, percent };
+        }
+    }
+
+    return best;
+}
+
+function projectPointOnSegment(lat, lon, p1, p2) {
+    const dx = p2.lon - p1.lon;
+    const dy = p2.lat - p1.lat;
+
+    if (dx === 0 && dy === 0) return 0;
+
+    const t = ((lon - p1.lon) * dx + (lat - p1.lat) * dy) / (dx * dx + dy * dy);
+    return Math.max(0, Math.min(1, t));
+}
+
+function updateGPS(lat, lon, startSec, endSec) {
+    if (pauseCheckbox.checked) return;
+    if (points.length < 2) return;
+
+    const redPercent = getCurrentPercent(startSec, endSec);
+    const nearest = snapToRoute(lat, lon, redPercent);
+
+    const nlat = nearest.lat;
+    const nlon = nearest.lon;
+
+    if (greenMarker) map.removeLayer(greenMarker);
+    greenMarker = L.circleMarker([nlat, nlon], {radius:8, color:'green'}).addTo(map);
+
+    const nowTime = Date.now();
+    const dtMs = lastGPS ? nowTime - lastGPS.time : 0;
+
+    if (lastGPS && dtMs > 0 && dtMs <= SMOOTH_WINDOW_MS * 2) {
+        const dtHours = dtMs / 3600000;
+        const d = distanceMi(lastGPS.lat, lastGPS.lon, lat, lon);
+        const instantSpeed = d / dtHours;
+        currentSpeedMph = smoothSpeedSample(instantSpeed, nowTime);
+    } else if (!lastGPS) {
+        currentSpeedMph = 0;
+    } else if (lastGPS && dtMs > SMOOTH_WINDOW_MS * 2) {
+        speedSamples.length = 0;
+        currentSpeedMph = 0;
+    }
+
+    lastGPS = { lat, lon, time: nowTime };
+
+    const percent = nearest.percent;
+    const expectedTimeSec = startSec + (percent / 100) * (endSec - startSec);
+
+    const now = new Date();
+    const currentSec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+    const timeDiff = currentSec - expectedTimeSec;
+
+    const userDist = getDistanceAtPercent(percent);
+    const targetDist = getDistanceAtPercent(redPercent);
+    const milesDiff = userDist - targetDist;
+
+    const totalHours = (endSec - startSec) / 3600;
+    const targetSpeed = getSegmentTargetSpeed(redPercent, totalHours);
+
+    const remainingMiles = Math.max(0, totalRouteDistance - userDist);
+    const estimatedFinishSec = currentSpeedMph > 0
+        ? currentSec + (remainingMiles / currentSpeedMph) * 3600
+        : null;
+    const estimatedFinish = estimatedFinishSec !== null ? secondsToTime(estimatedFinishSec) : 'N/A';
+
+    const expectedTimeText = formatTimeColor(expectedTimeSec, currentSec, secondsToTime(expectedTimeSec));
+    const timeColor = timeDiff < 0 ? 'green' : 'red';
+    const milesColor = milesDiff >= 0 ? 'green' : 'red';
+    const speedColor = currentSpeedMph > targetSpeed ? 'green' : 'red';
+
+    infoDiv.innerHTML = `
+Expected Time: ${expectedTimeText} (${estimatedFinish})<br>
+Time behind: ${formatSpan(`${timeDiff.toFixed(1)} s`, timeColor)}<br>
+Miles ahead: ${formatSpan(`${milesDiff.toFixed(3)} mi`, milesColor)} (${userDist.toFixed(3)}/${totalRouteDistance.toFixed(3)})<br>
+Current Speed: ${formatSpan(`${currentSpeedMph.toFixed(2)} mph`, speedColor)}<br>
+Target Speed: ${formatSpan(`${targetSpeed.toFixed(2)} mph`, 'black')}
+`;
+}
+
+function startTracking() {
+    if (intervalId) clearInterval(intervalId);
+
+    let startInput = document.getElementById('startTime').value.trim();
+    let endInput = document.getElementById('endTime').value.trim();
+    let durationInput = document.getElementById('duration').value.trim();
+
+    let startSec = startInput ? timeToSeconds(startInput) : null;
+    let endSec = endInput ? timeToSeconds(endInput) : null;
+    let durationSec = durationInput ? timeToSeconds(durationInput) : null;
+
+    if (startSec != null && endSec != null && durationSec == null) {
+        durationSec = endSec - startSec;
+        document.getElementById('duration').value = durationSec;
+    } else if (startSec != null && durationSec != null && endSec == null) {
+        endSec = startSec + durationSec;
+        document.getElementById('endTime').value = secondsToTime(endSec);
+    } else if (endSec != null && durationSec != null && startSec == null) {
+        startSec = endSec - durationSec;
+        document.getElementById('startTime').value = secondsToTime(startSec);
+    } else if ((startSec == null && endSec == null) || 
+               (startSec == null && durationSec == null) || 
+               (endSec == null && durationSec == null)) {
+        alert("Enter any two of Start Time, End Time, Duration");
+        return;
+    }
+
+    intervalId = setInterval(() => {
+        updateRedDot(startSec, endSec);
+    }, 1000);
+
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            pos => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                updateGPS(lat, lon, startSec, endSec);
+            },
+            err => console.error("GPS error:", err),
+            { enableHighAccuracy: true, maximumAge: 1000 }
+        );
+    } else {
+        alert("Geolocation not supported by your browser.");
+    }
+}
+
+fetch('route.csv')
+.then(res => res.text())
+.then(data => {
+    var data = `lon,lat,time
+-76.21341428,42.02421209,0
+-76.2136,42.024146,0.22
+-76.213496,42.023991,0.47
+-76.213304,42.023671,0.92
+-76.21293,42.022911,2.2
+-76.212964,42.022904,2.22
+-76.21335,42.022818,2.62
+-76.213547,42.02275,2.83
+-76.214353,42.022295,3.72
+-76.214847,42.022017,4.25
+-76.215744,42.021408,5.45
+-76.216269,42.021089,6.17
+-76.217538,42.02022,7.88
+-76.217768,42.020112,8.17
+-76.217815,42.020098,8.22
+-76.218041,42.020031,8.5
+-76.218888,42.019958,9.55
+-76.220443,42.019873,11.7
+-76.221035,42.019828,12.58
+-76.221169,42.0198,12.8
+-76.221202,42.019781,12.83
+-76.221239,42.019761,12.92
+-76.221285,42.019687,13.05
+-76.221865,42.017814,15.67
+-76.2222,42.016657,17.17
+-76.222392,42.015994,18
+-76.222823,42.014403,20
+-76.223099,42.013492,21.12
+-76.223497,42.012253,22.7
+-76.223882,42.01139,24.03
+-76.224089,42.010904,24.87
+-76.224194,42.010319,25.72
+-76.224185,42.009949,26.22
+-76.224206,42.009498,26.92
+-76.224273,42.008961,27.67
+-76.224313,42.008407,28.33
+-76.22441,42.00777,29
+-76.224496,42.007039,29.75
+-76.224597,42.005976,30.92
+-76.224642,42.004628,32.5
+-76.224689,42.003887,33.45
+-76.224726,42.002905,34.75
+-76.224845,42.001405,36.63
+-76.224855,42.000907,37.17
+-76.224911,42.000194,37.72
+-76.224922,41.999251,38.47
+-76.224895,41.998488,39.05
+-76.224789,41.996901,40.37
+-76.22487,41.996524,40.72
+-76.224893,41.996199,41.08
+-76.22484,41.995202,42.13
+-76.224829,41.994602,42.83
+-76.224802,41.994183,43.5
+-76.224794,41.993882,44.05
+-76.224807,41.993802,44.2
+-76.224802,41.993123,45.45
+-76.224787,41.992724,46.17
+-76.224787,41.992724,46.17
+-76.224802,41.993123,46.72
+-76.224807,41.993802,47.42
+-76.224794,41.993882,47.5
+-76.224802,41.994183,47.75
+-76.224829,41.994602,48.17
+-76.22484,41.995202,48.88
+-76.224893,41.996199,50.5
+-76.22487,41.996524,51.05
+-76.224789,41.996901,51.72
+-76.224895,41.998488,54.7
+-76.224922,41.999251,56.2
+-76.224911,42.000194,58.12
+-76.224855,42.000907,59.53
+-76.224845,42.001405,60.53
+-76.224726,42.002905,63.12
+-76.224689,42.003887,64.63
+-76.224642,42.004628,65.72
+-76.224597,42.005976,67.8
+-76.224496,42.007039,69.53
+-76.22441,42.00777,70.78
+-76.224313,42.008407,71.88
+-76.224273,42.008961,72.87
+-76.224206,42.009498,73.72
+-76.224185,42.009949,74.37
+-76.224194,42.010319,74.83
+-76.224089,42.010904,75.67
+-76.223882,42.01139,76.37
+-76.223497,42.012253,77.42
+-76.223099,42.013492,79.12
+-76.222823,42.014403,80.55
+-76.222392,42.015994,83.17
+-76.2222,42.016657,84.22
+-76.221865,42.017814,86.08
+-76.221285,42.019687,89
+-76.221239,42.019761,89.12
+-76.221202,42.019781,89.13
+-76.221169,42.0198,89.17
+-76.221035,42.019828,89.28
+-76.220443,42.019873,89.63
+-76.218888,42.019958,90.58
+-76.218041,42.020031,91.17
+-76.217815,42.020098,91.38
+-76.217768,42.020112,91.42
+-76.217538,42.02022,91.67
+-76.216269,42.021089,93.5
+-76.215744,42.021408,94.22
+-76.214847,42.022017,95.47
+-76.214353,42.022295,96.17
+-76.213547,42.02275,97.38
+-76.21335,42.022818,97.63
+-76.212964,42.022904,98.08
+-76.21293,42.022911,98.13
+-76.213304,42.023671,99.12
+-76.213496,42.023991,99.53
+-76.2136,42.024146,99.78
+-76.21341428,42.02421209,100`;
+    const lines = data.split('\n');
+    for (let i=1;i<lines.length;i++){
+        const parts = lines[i].split(',');
+        if(parts.length<3) continue;
+        const lon=parseFloat(parts[0]), lat=parseFloat(parts[1]), percent=parseFloat(parts[2]);
+        if(isNaN(lat)||isNaN(lon)||isNaN(percent)) continue;
+        points.push({lat,lon,percent});
+    }
+
+    totalRouteDistance = 0;
+    if (points.length > 0) {
+        points[0].cumDist = 0;
+        for (let i = 1; i < points.length; i++) {
+            const d = distanceMi(
+                points[i-1].lat, points[i-1].lon,
+                points[i].lat, points[i].lon
+            );
+            totalRouteDistance += d;
+            points[i].cumDist = totalRouteDistance;
+        }
+    }
+
+    const latlngs = points.map(p=>[p.lat,p.lon]);
+    routeLine = L.polyline(latlngs,{color:'blue'}).addTo(map);
+    if(latlngs.length>0) map.fitBounds(latlngs);
+});
+</script>
+
+</body>
+</html>
