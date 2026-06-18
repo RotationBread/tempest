@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Maze BFS Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, sans-serif;
+      background: #121212;
+      color: #eee;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 1.8rem;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.95rem;
+    }
+
+    input[type=number] {
+      width: 80px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #1a1a1a;
+      color: #eee;
+      margin-top: 6px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      background: #2f8;
+      color: #061;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    #mazeCanvas {
+      display: block;
+      background: #000;
+      border: 2px solid #444;
+      margin-top: 14px;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 18px;
+      font-size: 0.96rem;
+    }
+
+    .legend span {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      border-radius: 4px;
+      border: 1px solid #555;
+    }
+
+    #spectrumSwatch {
+      background: linear-gradient(90deg, #c00, #00f);
+    }
+
+    .info {
+      margin-top: 10px;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Maze BFS Visualizer</h1>
+  <div class="controls">
+    <label>
+      Width (cells)
+      <input id="widthInput" type="number" min="5" max="1000" value="25">
+    </label>
+    <label>
+      Height (cells)
+      <input id="heightInput" type="number" min="5" max="1000" value="15">
+    </label>
+    <button id="generateButton">Generate Maze</button>
+    <button id="stepButton" disabled>Step BFS</button>
+    <button id="resetButton" disabled>Reset Search</button>
+  </div>
+
+  <div class="info">
+    <strong id="frontierCount">White frontier cells: 0</strong>
+    <span id="statusText" style="margin-left: 24px;">Press Generate Maze to begin.</span>
+  </div>
+
+  <canvas id="mazeCanvas"></canvas>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#000"></span> Wall</span>
+    <span><span class="swatch" style="background:#0c0"></span> Start</span>
+    <span><span class="swatch" style="background:#c00"></span> Finish</span>
+    <span><span class="swatch" style="background:#fff; border:1px solid #000"></span> Frontier</span>
+    <span><span class="swatch" id="spectrumSwatch"></span> Already searched</span>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('mazeCanvas');
+    const ctx = canvas.getContext('2d');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const generateButton = document.getElementById('generateButton');
+    const stepButton = document.getElementById('stepButton');
+    const resetButton = document.getElementById('resetButton');
+    const frontierCount = document.getElementById('frontierCount');
+    const statusText = document.getElementById('statusText');
+
+    let maze = [];
+    let mazeWidth = 0;
+    let mazeHeight = 0;
+    let cellSize = 12;
+    let start = null;
+    let finish = null;
+    let visited = new Set();
+    let frontier = new Set();
+    let searchOrder = [];
+    let finished = false;
+
+    function backtrackingMaze(width, height, loopChance = 0.16) {
+      width -= width % 2; width++;
+      height -= height % 2; height++;
+      const maze = [];
+      for (let i = 0; i < height; i++) {
+        maze.push([]);
+        for (let j = 0; j < width; j++) {
+          maze[i].push(1);
+        }
+      }
+      maze[0][1] = 0;
+      const start = [];
+      do {
+        start[0] = Math.floor(Math.random() * height);
+      } while (start[0] % 2 === 0);
+      do {
+        start[1] = Math.floor(Math.random() * width);
+      } while (start[1] % 2 === 0);
+      maze[start[0]][start[1]] = 0;
+      const openCells = [start];
+      const visited = new Set([`${start[0]},${start[1]}`]);
+      while (openCells.length) {
+        openCells.push([-1, -1]);
+        let cell, n;
+        do {
+          openCells.pop();
+          if (openCells.length === 0) break;
+          cell = openCells[openCells.length - 1];
+          n = neighbors(maze, cell[0], cell[1]);
+          if (Math.random() < loopChance) {
+            const visited_neighbors = getVisitedNeighbors(maze, cell[0], cell[1], visited);
+            if (visited_neighbors.length > 0 && Math.random() < 0.5) {
+              const loop = visited_neighbors[Math.floor(Math.random() * visited_neighbors.length)];
+              maze[(loop[0] + cell[0]) / 2][(loop[1] + cell[1]) / 2] = 0;
+            }
+          }
+        } while (n.length === 0 && openCells.length > 0);
+        if (openCells.length === 0) break;
+        const choice = n[Math.floor(Math.random() * n.length)];
+        openCells.push(choice);
+        visited.add(`${choice[0]},${choice[1]}`);
+        maze[choice[0]][choice[1]] = 0;
+        maze[(choice[0] + cell[0]) / 2][(choice[1] + cell[1]) / 2] = 0;
+      }
+      maze[maze.length - 1][maze[0].length - 2] = 0;
+      maze[maze.length - 2][maze[0].length - 2] = 0;
+      return maze;
+    }
+
+    function getVisitedNeighbors(maze, ic, jc, visited) {
+      const final = [];
+      for (let i = 0; i < 4; i++) {
+        const n = [ic, jc];
+        n[i % 2] += ((Math.floor(i / 2) * 2) || -2);
+        if (n[0] < maze.length && n[1] < maze[0].length && n[0] > 0 && n[1] > 0) {
+          if (maze[n[0]][n[1]] === 0 && visited.has(`${n[0]},${n[1]}`)) {
+            final.push(n);
+          }
+        }
+      }
+      return final;
+    }
+
+    function neighbors(maze, ic, jc) {
+      const final = [];
+      for (let i = 0; i < 4; i++) {
+        const n = [ic, jc];
+        n[i % 2] += ((Math.floor(i / 2) * 2) || -2);
+        if (n[0] < maze.length && n[1] < maze[0].length && n[0] > 0 && n[1] > 0) {
+          if (maze[n[0]][n[1]] === 1) {
+            final.push(n);
+          }
+        }
+      }
+      return final;
+    }
+
+    function createMaze(width, height) {
+      maze = backtrackingMaze(width, height);
+      mazeHeight = maze.length;
+      mazeWidth = maze[0].length;
+      start = { x: 1, y: 0 };
+      finish = { x: mazeWidth - 2, y: mazeHeight - 1 };
+      updateCanvasSize();
+      renderMaze();
+    }
+
+    function updateCanvasSize() {
+      const maxWidth = Math.max(320, Math.min(window.innerWidth - 40, 960));
+      const maxHeight = Math.max(240, Math.min(window.innerHeight - 220, 640));
+      cellSize = Math.max(6, Math.min(22, Math.floor(Math.min(maxWidth / mazeWidth, maxHeight / mazeHeight))));
+      canvas.width = mazeWidth * cellSize;
+      canvas.height = mazeHeight * cellSize;
+      canvas.style.width = `${canvas.width}px`;
+      canvas.style.height = `${canvas.height}px`;
+      ctx.imageSmoothingEnabled = false;
+    }
+
+    function renderMaze() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < mazeHeight; y++) {
+        for (let x = 0; x < mazeWidth; x++) {
+          if (maze[y][x] === 1) continue;
+          const key = `${x},${y}`;
+          if (x === start.x && y === start.y) {
+            drawCell(x, y, '#0c0');
+          } else if (x === finish.x && y === finish.y) {
+            drawCell(x, y, '#c00');
+          } else if (frontier.has(key)) {
+            drawCell(x, y, '#fff');
+          } else if (visited.has(key)) {
+            const ageIndex = searchOrder.indexOf(key);
+            const agePercent = ageIndex >= 0 ? ageIndex / Math.max(1, searchOrder.length - 1) : 0;
+            drawCell(x, y, ageToColor(agePercent));
+          } else {
+            drawCell(x, y, '#111');
+          }
+        }
+      }
+    }
+
+    function drawCell(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+
+    function ageToColor(value) {
+      const hue = 240 - 240 * value;
+      return `hsl(${hue}, 100%, 55%)`;
+    }
+
+    function resetSearch() {
+      visited.clear();
+      frontier.clear();
+      searchOrder = [];
+      finished = false;
+      frontier.add(`${start.x},${start.y}`);
+      updateDisplay();
+      renderMaze();
+      statusText.textContent = 'Ready to step BFS.';
+      stepButton.disabled = false;
+      resetButton.disabled = false;
+    }
+
+    function stepSearch() {
+      if (frontier.size === 0) {
+        statusText.textContent = 'Search exhausted.';
+        stepButton.disabled = true;
+        return;
+      }
+      const currentLayer = Array.from(frontier);
+      const nextLayer = new Set();
+      let finishFound = false;
+      for (const key of currentLayer) {
+        if (!visited.has(key)) {
+          visited.add(key);
+          searchOrder.push(key);
+        }
+        const [x, y] = key.split(',').map(Number);
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx;
+          const ny = y + dy;
+          const neighborKey = `${nx},${ny}`;
+          if (nx < 0 || nx >= mazeWidth || ny < 0 || ny >= mazeHeight) continue;
+          if (maze[ny][nx] === 1) continue;
+          if (visited.has(neighborKey) || frontier.has(neighborKey) || nextLayer.has(neighborKey)) continue;
+          nextLayer.add(neighborKey);
+          if (nx === finish.x && ny === finish.y) {
+            finishFound = true;
+          }
+        }
+      }
+      frontier = nextLayer;
+      if (finishFound && !finished) {
+        statusText.textContent = 'Goal reached! Continue to explore more...';
+        finished = true;
+      } else if (frontier.size === 0) {
+        statusText.textContent = 'No more cells to search.';
+        stepButton.disabled = true;
+      } else {
+        statusText.textContent = `Expanded ${currentLayer.length} cell(s); next layer has ${frontier.size} frontier cell(s).`;
+      }
+      updateDisplay();
+      renderMaze();
+    }
+
+    function updateDisplay() {
+      frontierCount.textContent = `White frontier cells: ${frontier.size}`;
+    }
+
+    generateButton.addEventListener('click', () => {
+      const width = Math.max(5, Math.min(1000, parseInt(widthInput.value, 10) || 25));
+      const height = Math.max(5, Math.min(1000, parseInt(heightInput.value, 10) || 15));
+      widthInput.value = width;
+      heightInput.value = height;
+      createMaze(width, height);
+      resetSearch();
+    });
+
+    stepButton.addEventListener('click', stepSearch);
+    resetButton.addEventListener('click', resetSearch);
+
+    window.addEventListener('load', () => {
+      createMaze(parseInt(widthInput.value, 10), parseInt(heightInput.value, 10));
+      resetSearch();
+    });
+  </script>
+</body>
+</html>

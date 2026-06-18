@@ -119,20 +119,31 @@
     #current-temp {
       background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.95));
       border-radius: 12px;
-      padding: 18px 22px;
+      padding: 12px 16px;
       font-weight: 800;
-      text-align: center;
       box-shadow: 0 6px 18px rgba(2,6,8,0.6);
-      max-width: 480px;
+      max-width: 520px;
       width: fit-content;
       align-self: flex-start;
       border: 1px solid rgba(255,255,255,0.03);
+      display: flex;
+      align-items: center;
+      gap: 14px;
     }
 
-    #current-temp .temp-value{ font-size: clamp(28px,10vw,72px); color: var(--accent); }
-    #current-temp .temp-time{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
-    #current-temp .temp-info{ font-size: 11px; color: var(--muted); margin-top: 4px; font-weight:500; }
+    #current-temp .temp-left{ display:flex; align-items:center; justify-content:center; min-width:130px; }
+    #current-temp .temp-value{ font-size: clamp(32px,8vw,72px); color: var(--accent); }
+    #current-temp .temp-right{ display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+    #current-temp .temp-time{ font-size: 11px; color: var(--muted); font-weight:500; }
+    #current-temp .temp-info{ font-size: 11px; color: var(--muted); font-weight:500; }
     #current-temp .temp-info-label{ font-weight:600; color: #e6eef6; }
+
+    /* Feels-like and small metrics styling */
+    #current-temp .feels-block{ display:flex; flex-direction:column; align-items:flex-start; }
+    #current-temp .feels-label{ font-size:12px; color: var(--muted); font-weight:600; }
+    #current-temp .feels-value{ font-size:18px; font-weight:800; color:#ffd68a; margin-top:2px; }
+    #current-temp .small-metrics{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; align-items:center; font-size:11px; }
+    #current-temp .small-metrics .metric{ font-size:11px; color:var(--muted); white-space:nowrap; }
 
     #temp-graph-container {
       background: linear-gradient(180deg,var(--card), rgba(17,21,25,0.9));
@@ -243,6 +254,7 @@
 
           <div id="clock-detail-holder">
             <div class="temp-info"><span class="temp-info-label">Obs start:</span> <span id="obs-start">--</span></div>
+            <div class="temp-info" id="api-progress-row" style="display:none;"><span class="temp-info-label">Loading:</span> <span id="api-progress">--</span></div>
             <div class="temp-info" id="forecast-row" style="display:none;"><span class="temp-info-label" id="forecast-end-label">Forecast ends: </span> <span id="forecast-end">--</span></div>
             <div class="temp-info" id="threshold-row" style="display:none;"><span class="temp-info-label" id="threshold-reach-label">-- </span> <span id="threshold-reach">--</span></div>
             <div class="temp-info"><span class="temp-info-label">Next Obs Update:</span> <span id="next-obs-update">--</span></div>
@@ -256,9 +268,23 @@
         </div>
 
         <div id="current-temp">
-        <div class="temp-value">--°F</div>
-        <div class="temp-time"><span class="temp-info-label">Observed:</span> --</div>
-      </div>
+          <div class="temp-left">
+            <div class="temp-value">--°F</div>
+          </div>
+          <div class="temp-right">
+            <div class="feels-block">
+              <div class="feels-label">Feels like</div>
+              <div id="feels-value" class="feels-value">--°F</div>
+              <div class="small-metrics">
+                <div id="current-rh" class="metric">RH: --%</div>
+                <div id="current-wind" class="metric">Wind: -- mph</div>
+                <div id="current-dewpoint" class="metric">DP: --°F</div>
+                <div id="current-solar" class="metric">Solar: -- W/m²</div>
+              </div>
+            </div>
+            <div class="temp-time"><span class="temp-info-label">Observed:</span> --</div>
+          </div>
+        </div>
       </div>
       <div id="temp-graph-container">
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
@@ -294,6 +320,22 @@
             <input type="checkbox" id="show-forecast" style="margin-right:4px;">
             Forecast
           </label>
+          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
+            <input type="checkbox" id="show-ensemble" style="margin-right:4px;">
+            Ensemble
+          </label>
+          <span id="ensemble-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
+            <input type="number" id="ensemble-hours" min="1" max="5200" value="24" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+            h
+          </span>
+          <span id="ensemble-threshold-checkbox-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
+            <input type="checkbox" id="use-ensemble-threshold" style="margin-right:4px;">
+            Ensemble threshold
+          </span>
+          <span id="ensemble-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
+            <input type="number" id="ensemble-threshold" min="-100" max="150" value="32" step="0.1" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
+            °F
+          </span>
           <!-- wrap hour limit so we can hide it when forecast is off -->
           <span id="forecast-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
             <input type="number" id="forecast-hours" min="1" max="5200" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
@@ -336,15 +378,124 @@
     // Convert C → F (returns number)
     const cToF = c => (c * 9 / 5 + 32);
 
+    // Calculate dew point from temperature (F) and relative humidity (%)
+    // Uses Magnus formula approximation
+    function calculateDewpoint(tempF, rhPct) {
+      if (!Number.isFinite(tempF) || !Number.isFinite(rhPct)) return NaN;
+      const tempC = (tempF - 32) * 5 / 9;
+      const rh = Math.max(0, Math.min(100, rhPct));
+      
+      const a = 17.27;
+      const b = 237.7; // Celsius
+      
+      const alpha = ((a * tempC) / (b + tempC)) + Math.log(rh / 100);
+      const dewpointC = (b * alpha) / (a - alpha);
+      return (dewpointC * 9 / 5 + 32); // Convert back to F
+    }
+
+    // Compute feels-like temperature (F). Uses heat index for warm conditions,
+    // wind chill for cold conditions, otherwise returns actual temperature.
+    function computeFeelsLike(T, rhPct, windMph) {
+      const Tnum = Number(T);
+      const rh = Number(rhPct);
+      const w = Number(windMph);
+      if (!Number.isFinite(Tnum)) return NaN;
+
+      // Simplified heat index formula (used in mid-range and blending)
+      const simplifiedHI = () => {
+        if (!Number.isFinite(rh)) return Tnum;
+        return 0.5 * (Tnum + 61.0 + ((Tnum - 68.0) * 1.2) + (rh * 0.094));
+      };
+
+      // Full Rothfusz regression (used for high temps and blending)
+      const rothfuszHI = () => {
+        if (!Number.isFinite(rh)) return Tnum;
+        const c1 = -42.379;
+        const c2 = 2.04901523;
+        const c3 = 10.14333127;
+        const c4 = -0.22475541;
+        const c5 = -0.00683783;
+        const c6 = -0.05481717;
+        const c7 = 0.00122874;
+        const c8 = 0.00085282;
+        const c9 = -0.00000199;
+        return c1 + c2 * Tnum + c3 * rh + c4 * Tnum * rh + c5 * Tnum * Tnum + c6 * rh * rh + c7 * Tnum * Tnum * rh + c8 * Tnum * rh * rh + c9 * Tnum * Tnum * rh * rh;
+      };
+
+      // Wind chill (used for cold temps and blending)
+      const windChill = () => {
+        if (!Number.isFinite(w) || w <= 3) return Tnum;
+        return 35.74 + 0.6215 * Tnum - 35.75 * Math.pow(w, 0.16) + 0.4275 * Tnum * Math.pow(w, 0.16);
+      };
+
+      // Apply logic based on temperature
+      if (Tnum > 85) {
+        // Above 85°F: use full Rothfusz only
+        return rothfuszHI();
+      } else if (Tnum >= 65 && Tnum <= 85) {
+        // 65-85°F: linear blend between simplified and full Rothfusz
+        const wSimple = (85 - Tnum) / 20;  // at 65°F: 1.0, at 85°F: 0.0
+        const wRothfusz = (Tnum - 65) / 20; // at 65°F: 0.0, at 85°F: 1.0
+        return wSimple * simplifiedHI() + wRothfusz * rothfuszHI();
+      } else if (Tnum >= 55 && Tnum < 65) {
+        // 55-65°F: simplified formula only
+        return simplifiedHI();
+      } else if (Tnum >= 50 && Tnum < 55) {
+        // 50-55°F: linear blend between wind chill and simplified
+        const wWindChill = (55 - Tnum) / 5;  // at 50°F: 1.0, at 55°F: 0.0
+        const wSimple = (Tnum - 50) / 5;      // at 50°F: 0.0, at 55°F: 1.0
+        return wWindChill * windChill() + wSimple * simplifiedHI();
+      } else {
+        // Below 50°F: wind chill only
+        return windChill();
+      }
+    }
+
     // Parse the WeatherFlow CSV as observation objects
     function parseWeatherFlowCsv(text) {
       const lines = text.trim().split('\n');
       if (lines.length < 2) return [];
+
+      // Parse header to find humidity / wind / solar radiation columns if present
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const humidityIdx = header.findIndex(h => h.includes('rh') || h.includes('humidity') || h.includes('relative'));
+      const windIdx = header.findIndex(h => h.includes('wind') && (h.includes('speed') || h.includes('avg') || h.includes('spd') || h.includes('gust') || h.includes('kph') || h.includes('mph') || h.includes('m/s') || h.includes('kts')));
+      const solarIdx = header.findIndex(h => h.includes('solar') || h.includes('radiation') || h.includes('solar_radiation'));
+
       return lines.slice(1).map(line => {
         const cols = line.split(',').map(cell => cell.replace(/^'+|'+$/g, ''));
+        const ts = parseInt(cols[3], 10);
+        const tempC = parseFloat(cols[10]);
+        const tempF = Number.isFinite(tempC) ? parseFloat(cToF(tempC)) : NaN;
+
+        // parse humidity (percent) and wind (convert to mph when possible)
+        let rh = null;
+        if (humidityIdx >= 0) {
+          const v = parseFloat(cols[humidityIdx]);
+          if (Number.isFinite(v)) rh = v;
+        }
+
+        let windMph = null;
+        if (windIdx >= 0) {
+          const v = parseFloat(cols[windIdx]);
+          if (Number.isFinite(v)) {
+            // CSV wind_avg is in meters per second; convert to mph
+            windMph = v * 2.2369362920544;
+          }
+        }
+
+        let solarRad = null;
+        if (solarIdx >= 0) {
+          const v = parseFloat(cols[solarIdx]);
+          if (Number.isFinite(v)) solarRad = v;
+        }
+
         return {
-          ts: parseInt(cols[3], 10),
-          tempF: parseFloat(cToF(parseFloat(cols[10])))
+          ts: ts,
+          tempF: tempF,
+          rh: rh,
+          windMph: windMph,
+          solarRadiation: solarRad
         };
       }).filter(row => Number.isFinite(row.ts) && Number.isFinite(row.tempF));
     }
@@ -359,6 +510,8 @@
     // Track observation data info
     let lastObsTime = null;
     let lastObsStartTime = null;
+    let apiCallsTotal = 0;
+    let apiCallsCompleted = 0;
 
     // Update clock every second
     function updateClock() {
@@ -489,18 +642,41 @@
     async function fetchTempDataRange(rangeSeconds) {
       const now = Math.floor(Date.now() / 1000);
       if (rangeSeconds <= 86400) {
+        apiCallsTotal = 1;
+        apiCallsCompleted = 0;
+        updateApiProgress();
         const full = await fetchTempData();
+        apiCallsCompleted = 1;
+        updateApiProgress();
         const cutoff = now - rangeSeconds;
         return full.filter(d => d.ts >= cutoff);
       }
 
       let all = [];
       let start = now - rangeSeconds;
+      // Calculate number of API calls needed
+      let tempStart = start;
+      apiCallsTotal = 0;
+      while (tempStart < now) {
+        apiCallsTotal++;
+        tempStart += 86400;
+      }
+      apiCallsCompleted = 0;
+      updateApiProgress();
+      
+      start = now - rangeSeconds;
       while (start < now) {
         const end = Math.min(start + 86400, now);
         const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
           `?time_start=${start}&time_end=${end}&format=csv&api_key=${API_KEY}`;
-        all = all.concat(await fetchCsvData(url));
+        const chunkData = await fetchCsvData(url);
+        if (chunkData && chunkData.length > 0) {
+          all = all.concat(chunkData);
+        }
+        apiCallsCompleted++;
+        updateApiProgress();
+        // Add 100ms delay between API calls
+        await new Promise(resolve => setTimeout(resolve, 100));
         start = end;
       }
       return all;
@@ -511,12 +687,44 @@
       if (startTs >= endTs) return [];
       let all = [];
       let cur = startTs;
+      // Calculate number of API calls needed
+      let tempCur = startTs;
+      apiCallsTotal = 0;
+      while (tempCur < endTs) {
+        apiCallsTotal++;
+        tempCur += 86400;
+      }
+      apiCallsCompleted = 0;
+      updateApiProgress();
+      
+      cur = startTs;
       while (cur < endTs) {
         const chunkEnd = Math.min(cur + 86400, endTs);
-        all = all.concat(await fetchCsvData(`https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}?time_start=${cur}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`));
+        const chunkData = await fetchCsvData(`https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}?time_start=${cur}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`);
+        if (chunkData && chunkData.length > 0) {
+          all = all.concat(chunkData);
+        }
+        apiCallsCompleted++;
+        updateApiProgress();
+        // Add 100ms delay between API calls
+        await new Promise(resolve => setTimeout(resolve, 100));
         cur = chunkEnd;
       }
       return all;
+    }
+    
+    // Update the API progress display
+    function updateApiProgress() {
+      const progressEl = document.getElementById('api-progress');
+      const progressRow = document.getElementById('api-progress-row');
+      if (!progressEl || !progressRow) return;
+      
+      if (apiCallsTotal === 0 || apiCallsCompleted === apiCallsTotal) {
+        progressRow.style.display = 'none';
+      } else {
+        progressRow.style.display = 'flex';
+        progressEl.textContent = `${apiCallsCompleted}/${apiCallsTotal}`;
+      }
     }
 
     // --- forecast support --------------------------------------------------
@@ -528,6 +736,9 @@
     let lastForecastFetchTsHourlyNbm = 0; // ms since epoch
     let lastForecastFetchTsHourlyGfs = 0; // ms since epoch
     let lastForecastFetchTsHourlySeasonal = 0; // ms since epoch
+    let lastEnsembleData = null;
+    let lastEnsembleFetchTs = 0;
+    let lastEnsembleUrl = null;
 
     async function fetchForecastData() {
       // Open-Meteo request returning 15‑min resolution forecast (up to ~24h)
@@ -578,6 +789,29 @@
       return times.map((t, i) => ({ ts: Math.floor(new Date(t).getTime() / 1000), tempF: parseFloat(temps[i]) })).filter(p => Number.isFinite(p.tempF));
     }
 
+    async function fetchEnsembleData(requestedHours = 24) {
+      const useSeasonal = requestedHours > 840;
+      const url = useSeasonal
+        ? "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&daily=temperature_2m_max&hourly=temperature_2m&models=ecmwf_seasonal_seamless&temporal_resolution=hourly_1&forecast_days=217&temperature_unit=fahrenheit"
+        : "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_gefs_seamless&forecast_days=36&temperature_unit=fahrenheit";
+      const now = Date.now();
+      if (lastEnsembleData && lastEnsembleUrl === url && now - lastEnsembleFetchTs < 15 * 60 * 1000) {
+        return lastEnsembleData;
+      }
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        return lastEnsembleData;
+      }
+      const j = await resp.json();
+      if (!j.hourly || !j.hourly.time) {
+        return lastEnsembleData;
+      }
+      lastEnsembleFetchTs = now;
+      lastEnsembleUrl = url;
+      lastEnsembleData = j;
+      return j;
+    }
+
     async function fetchAllForecasts() {
       const now = Date.now();
       if (!lastForecastMinutely || now - lastForecastFetchTsMinutely > 15*60*1000) {
@@ -613,6 +847,45 @@
       const currentTemp = latest.tempF;
       const currentTimeStr = new Date(latest.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+      // Update current temp display
+      const tempEl = document.querySelector('#current-temp .temp-value');
+      if (tempEl) {
+        tempEl.textContent = `${currentTemp.toFixed(1)}°F`;
+      }
+
+      // Extract RH and wind if available and compute feels-like
+      const rhVal = (typeof latest.rh === 'number') ? latest.rh : null;
+      const windVal = (typeof latest.windMph === 'number') ? latest.windMph : null;
+      const solarVal = (typeof latest.solarRadiation === 'number') ? latest.solarRadiation : null;
+      const feels = computeFeelsLike(currentTemp, rhVal, windVal);
+      const dewpoint = calculateDewpoint(currentTemp, rhVal);
+
+      const feelsEl = document.getElementById('feels-value');
+      if (feelsEl && Number.isFinite(feels)) feelsEl.textContent = `${feels.toFixed(1)}°F`;
+
+      const rhEl = document.getElementById('current-rh');
+      if (rhEl) rhEl.textContent = rhVal !== null ? `RH: ${Math.round(rhVal)}%` : 'RH: --%';
+
+      const windEl = document.getElementById('current-wind');
+      if (windEl) {
+        if (windVal !== null) windEl.textContent = `Wind: ${windVal.toFixed(1)} mph`;
+        else windEl.textContent = `Wind: -- mph`;
+      }
+
+      const dewpointEl = document.getElementById('current-dewpoint');
+      if (dewpointEl) {
+        if (Number.isFinite(dewpoint)) dewpointEl.textContent = `DP: ${dewpoint.toFixed(1)}°F`;
+        else dewpointEl.textContent = `DP: --°F`;
+      }
+
+      const solarEl = document.getElementById('current-solar');
+      if (solarEl) {
+        if (solarVal !== null) solarEl.textContent = `Solar: ${solarVal.toFixed(0)} W/m²`;
+        else solarEl.textContent = `Solar: -- W/m²`;
+      }
+
+      // Color the main temp according to selected color mode (will be applied later)
+
       // Initialize offset variables
       let nbmOffset = '--';
       let gfsOffset = '--';
@@ -629,6 +902,7 @@
       let forecastEndTime = null;
       let thresholdReachTime = null;
       let thresholdValue = null;
+      let ensembleThresholdActive = false;
 
       const nowTs = latest.ts;
       const fivePast = fullData.find(d => d.ts >= nowTs - 5 * 60) || fullData[0];
@@ -708,6 +982,13 @@
       } else {
         currentColor = tempToColor(currentTemp);
       }
+
+      // Apply computed color to the main temp element
+      if (typeof tempEl !== 'undefined' && tempEl) {
+        tempEl.style.color = currentColor;
+      }
+      const feelsElLocal = document.getElementById('feels-value');
+      if (feelsElLocal) feelsElLocal.style.color = tempToColor(feels);
 
       function formatLabel(min){
         if (min >= 1440) return (min/1440) + 'd';
@@ -809,12 +1090,16 @@
         }
       }
 
+      // Calculate time range in seconds to determine if we should hide markers
+      const timeRangeSeconds = times.length > 0 ? times[times.length - 1].getTime() / 1000 - times[0].getTime() / 1000 : 0;
+      const hideMarkers = timeRangeSeconds > 259200; // 72 hours = 259200 seconds
+      
       // reduce number of line segments when point count is large
       let segTimes = times;
       let segTemps = temps;
       let segColors = pointColors;
-      if (times.length - 1 > 1000) {
-        const maxSeg = 1000;
+      if (times.length - 1 > 2850) {
+        const maxSeg = 2850;
         const step = Math.ceil((times.length - 1) / maxSeg);
         segTimes = [];
         segTemps = [];
@@ -833,30 +1118,184 @@
         }
       }
 
+      // Helper to build hover text for a data point
+      const buildHoverText = (tempF, rhVal, windVal, feelsLikeVal, dewpointVal, solarVal, tsSeconds) => {
+        const date = new Date(tsSeconds * 1000);
+        const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+        const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const dateTimeStr = `${dateStr} ${timeStr}`;
+        
+        const tempStr = `Temp: ${tempF.toFixed(1)}°F`;
+        const feelsStr = Number.isFinite(feelsLikeVal) ? `Feels Like: ${feelsLikeVal.toFixed(1)}°F` : 'Feels Like: --';
+        const rhStr = rhVal !== null ? `RH: ${Math.round(rhVal)}%` : 'RH: --';
+        const windStr = windVal !== null ? `Wind: ${windVal.toFixed(1)} mph` : 'Wind: --';
+        const dewStr = Number.isFinite(dewpointVal) ? `DP: ${dewpointVal.toFixed(1)}°F` : 'DP: --';
+        const solarStr = solarVal !== null ? `Solar: ${solarVal.toFixed(0)} W/m²` : 'Solar: --';
+        return `${dateTimeStr}<br>${tempStr}<br>${feelsStr}<br>${rhStr}<br>${windStr}<br>${dewStr}<br>${solarStr}`;
+      };
+
+      const hoverTemplate = '%{x|%b %d %I:%M %p}<br>Temp: %{y:.1f}°F<extra></extra>';
       // build traces: one line segment per interval on the (possibly) reduced arrays
       const traces = [];
       for (let i = 0; i < segTimes.length - 1; i++) {
+        // Find the data indices that match segTimes[i] and segTimes[i+1]
+        const dataIdxI = data.findIndex(d => new Date(d.ts * 1000).getTime() === segTimes[i].getTime());
+        const dataIdxI1 = data.findIndex(d => new Date(d.ts * 1000).getTime() === segTimes[i+1].getTime());
+        
+        const hoverTexts = [];
+        if (dataIdxI >= 0) {
+          const d = data[dataIdxI];
+          const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
+          const dewpt = calculateDewpoint(d.tempF, d.rh);
+          hoverTexts.push(buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts));
+        }
+        if (dataIdxI1 >= 0) {
+          const d = data[dataIdxI1];
+          const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
+          const dewpt = calculateDewpoint(d.tempF, d.rh);
+          hoverTexts.push(buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts));
+        }
+
         traces.push({
           x: [segTimes[i], segTimes[i+1]],
           y: [segTemps[i], segTemps[i+1]],
           type: 'scatter',
           mode: 'lines',
           line: { color: segColors[i], width: 4 },
-          hoverinfo: 'none',
+          text: hoverTexts,
+          hoverinfo: 'text',
+          hovertemplate: hoverTemplate,
           showlegend: false
         });
       }
-      // marker trace still uses full original data
-      traces.push({
+
+      // add feels-like line for observed values only (add it first so it's behind temp line)
+      const feelsLikeTemps = data.map(d => computeFeelsLike(d.tempF, d.rh, d.windMph));
+      const feelsLikeOpacity = hideMarkers ? 0.1 : 1; // 10% opacity for >72hr ranges
+      
+      traces.unshift({
         x: times,
-        y: temps,
+        y: feelsLikeTemps,
         type: 'scatter',
-        mode: 'markers',
-        marker: { size: 6, color: pointColors }
+        mode: 'lines',
+        line: { color: `rgba(255, 0, 0, ${feelsLikeOpacity})`, width: 2, dash: 'dot' },
+        hoverinfo: 'text',
+        showlegend: false
       });
 
-      // optionally add forecast line if requested
+      // marker trace still uses full original data (but only if time range <= 72 hours)
+      if (!hideMarkers) {
+        const markerHoverText = data.map(d => {
+          const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
+          const dewpt = calculateDewpoint(d.tempF, d.rh);
+          return buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts);
+        });
+        traces.push({
+          x: times,
+          y: temps,
+          type: 'scatter',
+          mode: 'markers',
+          marker: { size: 6, color: pointColors },
+          text: markerHoverText,
+          hoverinfo: 'text',
+          hovertemplate: '%{text}<extra></extra>',
+          showlegend: false
+        });
+      }
+
+      // optionally add forecast or ensemble lines if requested
       const showForecast = document.getElementById('show-forecast')?.checked;
+      const showEnsemble = document.getElementById('show-ensemble')?.checked;
+      const lastObs = data[data.length - 1];
+      if (showEnsemble) {
+        const ensembleHours = parseInt(document.getElementById('ensemble-hours')?.value) || 24;
+        const ensemblePayload = await fetchEnsembleData(ensembleHours);
+        if (ensemblePayload && ensemblePayload.hourly && ensemblePayload.hourly.time) {
+          const ensembleTimesRaw = ensemblePayload.hourly.time.map(t => Math.floor(new Date(t).getTime() / 1000));
+          const memberKeys = Object.keys(ensemblePayload.hourly).filter(k => k.startsWith('temperature_2m_member')).sort();
+          const ensembleStartTs = Math.floor(lastObs.ts / 3600) * 3600;
+          const startIndex = ensembleTimesRaw.findIndex(ts => ts >= ensembleStartTs);
+          if (startIndex >= 0) {
+            const trimmedTimes = ensembleTimesRaw.slice(startIndex).map(ts => new Date(ts * 1000));
+            const memberValues = memberKeys.map(key => ensemblePayload.hourly[key].slice(startIndex).map(v => parseFloat(v)));
+            const ensembleEndTs = Math.floor(trimmedTimes[0].getTime() / 1000) + ensembleHours * 3600;
+            const limitIndex = trimmedTimes.findIndex(dt => Math.floor(dt.getTime() / 1000) > ensembleEndTs);
+            const finalTimes = limitIndex === -1 ? trimmedTimes : trimmedTimes.slice(0, limitIndex);
+            const finalMemberValues = limitIndex === -1 ? memberValues : memberValues.map(values => values.slice(0, limitIndex));
+            const obsAtStart = data.find(d => d.ts === Math.floor(finalTimes[0].getTime() / 1000))
+              || data.slice().reverse().find(d => d.ts <= Math.floor(finalTimes[0].getTime() / 1000));
+            const baseObsTemp = obsAtStart ? obsAtStart.tempF : lastObs.tempF;
+            const adjustedMemberValues = finalMemberValues.map(values => {
+              const firstForecastTemp = values[0];
+              const offset = Number.isFinite(firstForecastTemp) ? baseObsTemp - firstForecastTemp : 0;
+              return values.map(v => Number.isFinite(v) ? v + offset : v);
+            });
+            const adjustedMeanValues = finalTimes.map((_, idx) => {
+              let sum = 0;
+              let count = 0;
+              for (const values of adjustedMemberValues) {
+                const val = values[idx];
+                if (Number.isFinite(val)) {
+                  sum += val;
+                  count += 1;
+                }
+              }
+              return count ? sum / count : NaN;
+            });
+            const useEnsembleThreshold = document.getElementById('use-ensemble-threshold')?.checked;
+            if (useEnsembleThreshold) {
+              const threshold = parseFloat(document.getElementById('ensemble-threshold')?.value) || 32;
+              let thresholdIndex = adjustedMeanValues.length;
+              const startMean = adjustedMeanValues[0];
+              for (let i = 0; i < adjustedMeanValues.length; i++) {
+                const v = adjustedMeanValues[i];
+                if (!Number.isFinite(v)) continue;
+                if (startMean < threshold && v >= threshold) {
+                  thresholdIndex = i + 1;
+                  break;
+                }
+                if (startMean > threshold && v <= threshold) {
+                  thresholdIndex = i + 1;
+                  break;
+                }
+              }
+              if (thresholdIndex < adjustedMeanValues.length) {
+                finalTimes.splice(thresholdIndex);
+                adjustedMemberValues.forEach(values => values.splice(thresholdIndex));
+                adjustedMeanValues.splice(thresholdIndex);
+                thresholdValue = threshold;
+                ensembleThresholdActive = true;
+                thresholdReachTime = new Date(finalTimes[finalTimes.length - 1]).toLocaleString();
+              }
+            }
+            adjustedMemberValues.forEach((values, idx) => {
+              const memberKey = memberKeys[idx];
+              traces.push({
+                x: finalTimes,
+                y: values,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'grey', width: 2, dash: 'dash' },
+                hovertemplate: '%{x|%b %d %I:%M %p}<br>' + memberKey + ': %{y:.1f}°F<extra></extra>',
+                hoverinfo: 'text',
+                hoverlabel: { bgcolor: 'rgba(20,20,20,0.95)', font: { size: 11, color: '#fff' } },
+                showlegend: false
+              });
+            });
+            traces.push({
+              x: finalTimes,
+              y: adjustedMeanValues,
+              type: 'scatter',
+              mode: 'lines',
+              line: { color: '#f0f0f0', width: 5, dash: 'dash' },
+              hovertemplate: '%{x|%b %d %I:%M %p}<br>Ensemble Mean: %{y:.1f}°F<extra></extra>',
+              hoverinfo: 'text',
+              hoverlabel: { bgcolor: '#111', font: { size: 14, color: '#fff' } },
+              showlegend: false
+            });
+          }
+        }
+      }
       if (!showForecast) {
         forecastEndTime = null;
         thresholdReachTime = null;
@@ -1078,6 +1517,7 @@
               }
             }
             limited = adjustedForecast.slice(0, thresholdIndex);
+            ensembleThresholdActive = false;
           } else {
             const endTs = adjustedForecast[0].ts + hoursLimit * 3600;
             limited = adjustedForecast.filter(d => d.ts <= endTs);
@@ -1121,7 +1561,9 @@
             type: 'scatter',
             mode: 'lines',
             line: { color: 'grey', width: 2, dash: 'dash' },
-            name: 'Forecast'
+            name: 'Forecast',
+            hovertemplate: '%{x|%b %d %I:%M %p}<br>Forecast: %{y:.1f}°F<extra></extra>',
+            hoverinfo: 'text'
           });
         }
       }
@@ -1131,6 +1573,7 @@
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
         font: { color: '#e0e0e0' },
+        hovermode: 'closest',
         xaxis: { title: 'Time' },
         yaxis: { title: 'Temperature °F' }
       }, { responsive: true });
@@ -1160,7 +1603,11 @@
       }
 
       if (thresholdReachLabelEl) {
-        thresholdReachLabelEl.textContent = thresholdValue ? `${thresholdValue}° will be reached: ` : '';
+        thresholdReachLabelEl.textContent = thresholdValue
+          ? ensembleThresholdActive
+            ? `Mean ensemble crosses ${thresholdValue}°: `
+            : `${thresholdValue}° will be reached: `
+          : '';
       }
       if (thresholdReachEl) {
         thresholdReachEl.textContent = thresholdReachTime || '--';
@@ -1184,6 +1631,7 @@
     updateForecastControls();
     updateThresholdControls();
     updateSyncControls();
+    updateEnsembleControls();
     updateRangeFieldsVisibility();
 
     function deltaColor() {
@@ -1218,6 +1666,15 @@
       // threshold value visibility also depends on threshold checkbox
       updateThresholdControls();
       updateSyncControls();
+    }
+
+    function updateEnsembleControls() {
+      const showEnsemble = document.getElementById('show-ensemble').checked;
+      const useThresh = document.getElementById('use-ensemble-threshold').checked;
+      document.getElementById('ensemble-hours-wrapper').style.display = showEnsemble && !useThresh ? 'flex' : 'none';
+      document.getElementById('ensemble-threshold-checkbox-wrapper').style.display = showEnsemble ? 'flex' : 'none';
+      document.getElementById('ensemble-threshold-wrapper').style.display = showEnsemble && useThresh ? 'flex' : 'none';
+      document.getElementById('ensemble-threshold').disabled = !useThresh;
     }
 
     // show/hide threshold number input based on checkbox and forecast visibility
@@ -1284,6 +1741,11 @@
     document.getElementById('apply-range').addEventListener('click', updateDashboard);
     document.getElementById('show-forecast').addEventListener('change', updateDashboard);
     document.getElementById('show-forecast').addEventListener('change', updateForecastControls);
+    document.getElementById('show-ensemble').addEventListener('change', () => {
+      updateEnsembleControls();
+      updateDashboard();
+    });
+    document.getElementById('ensemble-hours').addEventListener('change', updateDashboard);
     document.getElementById('forecast-hours').addEventListener('change', () => {
       updateSyncControls();
       updateForecastControls();
@@ -1293,6 +1755,11 @@
       updateThresholdControls();
       updateDashboard();
     });
+    document.getElementById('use-ensemble-threshold').addEventListener('change', () => {
+      updateEnsembleControls();
+      updateDashboard();
+    });
+    document.getElementById('ensemble-threshold').addEventListener('change', updateDashboard);
     document.getElementById('sync-obs-forecast').addEventListener('change', () => {
       updateSyncControls();
       updateDashboard();
