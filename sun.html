@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Solar Tracker</title>
+<style>
+:root {
+    color-scheme: dark;
+}
+html, body {
+    margin: 0;
+    min-height: 100%;
+    height: 100%;
+}
+body {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    background: radial-gradient(circle at top, #04112b 0%, #020a19 38%, #010612 100%);
+    color: #d8e9ff;
+}
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 20% 20%, rgba(68, 120, 255, 0.08), transparent 18%),
+                radial-gradient(circle at 80% 15%, rgba(54, 105, 255, 0.05), transparent 12%),
+                radial-gradient(circle at 50% 80%, rgba(33, 78, 175, 0.06), transparent 15%);
+    pointer-events: none;
+}
+.page {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: 100vh;
+    padding: 24px;
+    box-sizing: border-box;
+}
+.dashboard {
+    display: grid;
+    grid-template-columns: minmax(360px, 400px) 1fr;
+    gap: 22px;
+    min-height: calc(100vh - 48px);
+}
+.panel {
+    display: flex;
+    flex-direction: column;
+    padding: 26px;
+    gap: 20px;
+    border-radius: 28px;
+    background: rgba(5, 13, 33, 0.94);
+    border: 1px solid rgba(55, 110, 255, 0.15);
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+}
+.current-panel {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+}
+.panel-title {
+    margin: 0;
+    color: #9cb8e9;
+    font-size: 0.95rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+.metric-grid {
+    display: grid;
+    gap: 16px;
+}
+.metric {
+    display: grid;
+    gap: 10px;
+    padding: 18px 20px;
+    border-radius: 22px;
+    background: rgba(10, 22, 45, 0.92);
+    border: 1px solid rgba(71, 126, 255, 0.12);
+}
+.metric-label {
+    color: #8da8d4;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.metric-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #f5fbff;
+}
+.meta-grid {
+    display: grid;
+    gap: 14px;
+}
+.meta-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 22px;
+    background: rgba(9, 18, 36, 0.9);
+    border: 1px solid rgba(72, 130, 255, 0.1);
+}
+.meta-label {
+    color: #8caadc;
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.meta-value {
+    color: #eef5ff;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.events-panel {
+    overflow-y: auto;
+}
+.events-panel::-webkit-scrollbar {
+    width: 10px;
+}
+.events-panel::-webkit-scrollbar-track {
+    background: rgba(6, 12, 24, 0.9);
+    border-radius: 999px;
+}
+.events-panel::-webkit-scrollbar-thumb {
+    background: rgba(81, 133, 255, 0.24);
+    border-radius: 999px;
+}
+.event-list {
+    display: grid;
+    gap: 18px;
+}
+.event-card {
+    display: grid;
+    gap: 10px;
+    padding: 18px 20px;
+    border-radius: 24px;
+    background: rgba(9, 17, 31, 0.95);
+    border: 1px solid rgba(78, 134, 255, 0.14);
+}
+.event-label {
+    color: #92a9d8;
+    font-size: 0.82rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.event-value {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #f4fbff;
+}
+.event-subtitle {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.95rem;
+    color: #b7c8e7;
+}
+@media (max-width: 960px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+    .current-panel {
+        position: static;
+    }
+}
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="dashboard">
+        <section class="panel current-panel">
+            <div class="panel-title">Current Sun Status</div>
+            <div class="metric-grid">
+                <div class="metric">
+                    <div class="metric-label">Local Time</div>
+                    <div id="time" class="metric-value">--:--:--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Altitude</div>
+                    <div id="alt" class="metric-value">--.--°</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Azimuth</div>
+                    <div id="az" class="metric-value">--.--°</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Height Speed</div>
+                    <div id="rate" class="metric-value">--.--°/hr</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Since Sunrise</div>
+                    <div id="sinceSunrise" class="metric-value">--:--:--</div>
+                </div>
+            </div>
+            <div class="meta-grid">
+                <div class="meta-item">
+                    <div class="meta-label">Max Height Today</div>
+                    <div id="maxAlt" class="meta-value">--.--°</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Sunrise</div>
+                    <div id="sunriseTime" class="meta-value">--:--</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-label">Sunset</div>
+                    <div id="sunsetTime" class="meta-value">--:--</div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="panel events-panel">
+            <div class="panel-title">Upcoming Sun Events</div>
+            <div id="eventList" class="event-list"></div>
+        </aside>
+    </div>
+</div>
+
+<script>
+const rad = Math.PI / 180;
+const deg = 180 / Math.PI;
+const lat = 42.024 * rad;
+const lon = -76.215;
+const refractionSunrise = -0.833;
+
+function normalizeDegrees(angle) {
+    return angle - 360 * Math.floor(angle / 360);
+}
+
+function solarPosition(date) {
+    const jd = date.getTime() / 86400000 + 2440587.5;
+    const jc = (jd - 2451545.0) / 36525;
+
+    const meanLon = normalizeDegrees(280.46646 + 36000.76983 * jc + 0.0003032 * jc * jc);
+    const meanAnom = normalizeDegrees(357.52911 + 35999.05029 * jc - 0.0001537 * jc * jc);
+    const ecc = 0.016708634 - 0.000042037 * jc - 0.0000001267 * jc * jc;
+
+    const meanAnomRad = meanAnom * rad;
+    const sunEqCenter =
+        (1.914602 - 0.004817 * jc - 0.000014 * jc * jc) * Math.sin(meanAnomRad) +
+        (0.019993 - 0.000101 * jc) * Math.sin(2 * meanAnomRad) +
+        0.000289 * Math.sin(3 * meanAnomRad);
+
+    const sunTrueLong = meanLon + sunEqCenter;
+    const omega = 125.04 - 1934.136 * jc;
+    const sunAppLong = sunTrueLong - 0.00569 - 0.00478 * Math.sin(omega * rad);
+
+    const meanObliq = 23.4392911111111 - 0.0130041666667 * jc - 0.0000001638889 * jc * jc + 0.0000005036111 * jc * jc * jc;
+    const obliqCorr = meanObliq + 0.00256 * Math.cos(omega * rad);
+
+    const declination = Math.asin(Math.sin(obliqCorr * rad) * Math.sin(sunAppLong * rad));
+
+    const y = Math.tan((obliqCorr * rad) / 2);
+    const eqTime = 4 * deg * (
+        y * Math.sin(2 * meanLon * rad) -
+        2 * ecc * Math.sin(meanAnomRad) +
+        4 * ecc * y * Math.sin(meanAnomRad) * Math.cos(2 * meanLon * rad) -
+        0.5 * y * y * Math.sin(4 * meanLon * rad) -
+        1.25 * ecc * ecc * Math.sin(2 * meanAnomRad)
+    );
+
+    const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60 + date.getUTCMilliseconds() / 60000;
+    let trueSolarTime = utcMinutes + eqTime + 4 * lon;
+    trueSolarTime = ((trueSolarTime % 1440) + 1440) % 1440;
+
+    const hourAngle = (trueSolarTime / 4 - 180) * rad;
+
+    const sinAlt = Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
+    const altitude = Math.asin(Math.min(Math.max(sinAlt, -1), 1));
+
+    const azRad = Math.atan2(
+        Math.sin(hourAngle),
+        Math.cos(hourAngle) * Math.sin(lat) - Math.tan(declination) * Math.cos(lat)
+    );
+    let azimuth = (azRad * deg + 180) % 360;
+    if (azimuth < 0) azimuth += 360;
+
+    const altDeg = altitude * deg;
+    const refraction = (altDeg > -0.575)
+        ? 0.00452 / Math.tan((altDeg + 10.3 / (altDeg + 5.11)) * rad)
+        : 0;
+    const apparentAltitude = altDeg + refraction;
+
+    return {
+        altitude: altDeg,
+        apparentAltitude,
+        azimuth
+    };
+}
+
+function refineCrossing(targetAlt, low, high) {
+    let t1 = new Date(low);
+    let t2 = new Date(high);
+    for (let i = 0; i < 25; i++) {
+        const mid = new Date((t1.getTime() + t2.getTime()) / 2);
+        const alt = solarPosition(mid).apparentAltitude;
+        if ((solarPosition(t1).apparentAltitude < targetAlt && alt >= targetAlt) ||
+            (solarPosition(t1).apparentAltitude > targetAlt && alt <= targetAlt)) {
+            t2 = mid;
+        } else {
+            t1 = mid;
+        }
+    }
+    return t2;
+}
+
+function findNextCrossing(targetAlt, fromDate, rising) {
+    const step = 60000;
+    let t = new Date(fromDate);
+    let prevAlt = solarPosition(t).apparentAltitude;
+    for (let i = 0; i < 2880; i++) {
+        t = new Date(t.getTime() + step);
+        const currAlt = solarPosition(t).apparentAltitude;
+        if ((rising && prevAlt < targetAlt && currAlt >= targetAlt) || (!rising && prevAlt > targetAlt && currAlt <= targetAlt)) {
+            return refineCrossing(targetAlt, new Date(t.getTime() - step), t);
+        }
+        prevAlt = currAlt;
+    }
+    return null;
+}
+
+function findPreviousCrossing(targetAlt, fromDate, rising) {
+    const step = 60000;
+    let t = new Date(fromDate);
+    let prevAlt = solarPosition(t).apparentAltitude;
+    for (let i = 0; i < 2880; i++) {
+        t = new Date(t.getTime() - step);
+        const currAlt = solarPosition(t).apparentAltitude;
+        if ((rising && prevAlt < targetAlt && currAlt >= targetAlt) || (!rising && prevAlt > targetAlt && currAlt <= targetAlt)) {
+            return refineCrossing(targetAlt, t, new Date(t.getTime() + step));
+        }
+        prevAlt = currAlt;
+    }
+    return null;
+}
+
+function findSunriseSunset(now) {
+    const prevSunrise = findPreviousCrossing(refractionSunrise, now, true);
+    const nextSunrise = findNextCrossing(refractionSunrise, now, true);
+    const prevSunset = findPreviousCrossing(refractionSunrise, now, false);
+    const nextSunset = findNextCrossing(refractionSunrise, now, false);
+    return {prevSunrise, nextSunrise, prevSunset, nextSunset};
+}
+
+function findMaxAltitude(start, end) {
+    if (!start || !end) return null;
+    let best = {time: new Date(start), alt: solarPosition(start).apparentAltitude};
+    const step = 2 * 60000;
+    for (let t = new Date(start.getTime()); t <= end; t = new Date(t.getTime() + step)) {
+        const alt = solarPosition(t).apparentAltitude;
+        if (alt > best.alt) best = {time: new Date(t), alt};
+    }
+    for (let offset = -180; offset <= 180; offset += 1) {
+        const t = new Date(best.time.getTime() + offset * 1000);
+        if (t < start || t > end) continue;
+        const alt = solarPosition(t).apparentAltitude;
+        if (alt > best.alt) best = {time: new Date(t), alt};
+    }
+    return best;
+}
+
+function formatTime(date) {
+    return date ? new Intl.DateTimeFormat([], {hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(date) : '--:--:--';
+}
+
+function formatShort(date) {
+    return date ? new Intl.DateTimeFormat([], {hour: '2-digit', minute: '2-digit'}).format(date) : '--:--';
+}
+
+function formatCountdown(ms) {
+    if (ms == null || ms < 0) return 'passed';
+    const total = Math.floor(ms / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function buildEventCards(now) {
+    const {prevSunrise, nextSunrise, prevSunset, nextSunset} = findSunriseSunset(now);
+    const isAfterSunset = nextSunset && now >= nextSunset;
+    const isBeforeSunrise = nextSunrise && now < nextSunrise;
+    const dayStart = isAfterSunset || isBeforeSunrise ? nextSunrise : prevSunrise;
+    const dayEnd = isAfterSunset || isBeforeSunrise ? findNextCrossing(refractionSunrise, nextSunrise, false) : nextSunset;
+
+    const maxInfo = findMaxAltitude(dayStart, dayEnd);
+    const currentAlt = solarPosition(now).apparentAltitude;
+    const events = [];
+
+    if (nextSunrise && nextSunrise > now) {
+        events.push({label: 'Next Sunrise', time: nextSunrise});
+    }
+    if (nextSunset && nextSunset > now) {
+        events.push({label: 'Sunset', time: nextSunset});
+    }
+
+    if (maxInfo && maxInfo.time > now) {
+        events.push({label: `Maximum Altitude ${maxInfo.alt.toFixed(2)}°`, time: maxInfo.time});
+    }
+
+    if (maxInfo) {
+        let nextThreshold = Math.ceil((currentAlt + 1e-9) / 6) * 6;
+        if (nextThreshold < 0) nextThreshold = 0;
+        for (let alt = nextThreshold; alt <= maxInfo.alt + 1e-9; alt += 6) {
+            const eventTime = findNextCrossing(alt, now, true);
+            if (eventTime && eventTime > now) {
+                events.push({label: `Cross ${alt.toFixed(0)}°`, time: eventTime});
+            }
+        }
+        for (let alt = Math.floor(maxInfo.alt / 6) * 6; alt >= 0; alt -= 6) {
+            const eventTime = findNextCrossing(alt, maxInfo.time, false);
+            if (eventTime && eventTime > now) {
+                events.push({label: `Descend ${alt.toFixed(0)}°`, time: eventTime});
+            }
+        }
+    }
+
+    [
+        {label: 'Civil Twilight', alt: -6, rising: false},
+        {label: 'Nautical Twilight', alt: -12, rising: false},
+        {label: 'Astronomical Twilight', alt: -18, rising: false}
+    ].forEach((item) => {
+        const eventTime = findNextCrossing(item.alt, now, item.rising);
+        if (eventTime && eventTime > now) {
+            events.push({label: item.label, time: eventTime});
+        }
+    });
+
+    const unique = [];
+    const seen = new Set();
+    events.sort((a, b) => a.time - b.time).forEach((event) => {
+        const id = `${event.label}|${event.time.getTime()}`;
+        if (!seen.has(id)) {
+            seen.add(id);
+            unique.push(event);
+        }
+    });
+    return {events: unique, maxInfo, dayStart, dayEnd};
+}
+
+function updateUI() {
+    const now = new Date();
+    const pos = solarPosition(now);
+    const pos2 = solarPosition(new Date(now.getTime() + 1000));
+    const rate = (pos2.altitude - pos.altitude) * 3600;
+    const {events, maxInfo, dayStart, dayEnd} = buildEventCards(now);
+
+    document.getElementById('time').textContent = formatTime(now);
+    document.getElementById('alt').textContent = `${pos.altitude.toFixed(4)}°`;
+    document.getElementById('az').textContent = `${pos.azimuth.toFixed(4)}°`;
+    document.getElementById('rate').textContent = `${rate.toFixed(4)}°/hr`;
+    document.getElementById('maxAlt').textContent = maxInfo ? `${maxInfo.alt.toFixed(4)}°` : '--.--°';
+    document.getElementById('sunriseTime').textContent = formatShort(dayStart);
+    document.getElementById('sunsetTime').textContent = formatShort(dayEnd);
+    document.getElementById('sinceSunrise').textContent = dayStart && now >= dayStart ? formatCountdown(now - dayStart) : 'not yet risen';
+
+    const container = document.getElementById('eventList');
+    container.innerHTML = '';
+    events.forEach((event) => {
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        const label = document.createElement('div');
+        label.className = 'event-label';
+        label.textContent = event.label;
+        const time = document.createElement('div');
+        time.className = 'event-value';
+        time.textContent = formatTime(event.time);
+        const countdown = document.createElement('div');
+        countdown.className = 'event-subtitle';
+        countdown.innerHTML = `<span>Countdown</span><span>${formatCountdown(event.time - now)}</span>`;
+        card.appendChild(label);
+        card.appendChild(time);
+        card.appendChild(countdown);
+        container.appendChild(card);
+    });
+}
+
+updateUI();
+setInterval(updateUI, 1000);
+</script>
+
+</body>
+</html>

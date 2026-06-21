@@ -255,6 +255,7 @@
           <div id="clock-detail-holder">
             <div class="temp-info"><span class="temp-info-label">Obs start:</span> <span id="obs-start">--</span></div>
             <div class="temp-info" id="api-progress-row" style="display:none;"><span class="temp-info-label">Loading:</span> <span id="api-progress">--</span></div>
+            <div class="temp-info" id="trace-count-row" style="display:flex;"><span class="temp-info-label">Trace count:</span> <span id="trace-count">--</span></div>
             <div class="temp-info" id="forecast-row" style="display:none;"><span class="temp-info-label" id="forecast-end-label">Forecast ends: </span> <span id="forecast-end">--</span></div>
             <div class="temp-info" id="threshold-row" style="display:none;"><span class="temp-info-label" id="threshold-reach-label">-- </span> <span id="threshold-reach">--</span></div>
             <div class="temp-info"><span class="temp-info-label">Next Obs Update:</span> <span id="next-obs-update">--</span></div>
@@ -500,18 +501,61 @@
       }).filter(row => Number.isFinite(row.ts) && Number.isFinite(row.tempF));
     }
 
+    let lastApiFetchTs = 0;
+    const apiFetchMinIntervalMs = 100;
+
+    async function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function rateLimitedFetch(url, options) {
+      const now = Date.now();
+      const wait = apiFetchMinIntervalMs - (now - lastApiFetchTs);
+      if (wait > 0) {
+        await delay(wait);
+      }
+      lastApiFetchTs = Date.now();
+      return fetch(url, options);
+    }
+
     async function fetchCsvData(url) {
-      const resp = await fetch(url);
-      if (!resp.ok) return [];
-      const text = await resp.text();
-      return parseWeatherFlowCsv(text);
+      while (true) {
+        try {
+          const resp = await rateLimitedFetch(url);
+          if (!resp.ok) {
+            console.warn(`Fetch failed (${resp.status}) for ${url}, retrying...`);
+            await delay(500);
+            continue;
+          }
+          const text = await resp.text();
+          return parseWeatherFlowCsv(text);
+        } catch (err) {
+          console.warn(`Fetch error for ${url}:`, err);
+          await delay(500);
+        }
+      }
+    }
+
+    async function fetchCsvDataWithProgress(url) {
+      const data = await fetchCsvData(url);
+      if (data && data.length > 0) {
+        apiCallsSuccess++;
+        updateApiProgress();
+      }
+      return data;
     }
 
     // Track observation data info
     let lastObsTime = null;
     let lastObsStartTime = null;
-    let apiCallsTotal = 0;
-    let apiCallsCompleted = 0;
+    let apiCallsSuccess = 0;
+
+    // Cache for API data to avoid duplicate fetches
+    let cachedData = null;
+    let cachedRangeSeconds = null;
+    let cachedStartTs = null;
+    let cachedEndTs = null;
+    let isScheduledUpdate = false;
 
     // Update clock every second
     function updateClock() {
@@ -633,7 +677,7 @@
       const start = now - 86400;
       const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
         `?time_start=${start}&time_end=${now}&format=csv&api_key=${API_KEY}`;
-      return fetchCsvData(url);
+      return fetchCsvDataWithProgress(url);
     }
 
     // Fetch data for an arbitrary range (seconds). If range is <=24h we simply
@@ -642,26 +686,16 @@
     async function fetchTempDataRange(rangeSeconds) {
       const now = Math.floor(Date.now() / 1000);
       if (rangeSeconds <= 86400) {
-        apiCallsTotal = 1;
-        apiCallsCompleted = 0;
+        apiCallsSuccess = 0;
         updateApiProgress();
         const full = await fetchTempData();
-        apiCallsCompleted = 1;
-        updateApiProgress();
         const cutoff = now - rangeSeconds;
         return full.filter(d => d.ts >= cutoff);
       }
 
       let all = [];
       let start = now - rangeSeconds;
-      // Calculate number of API calls needed
-      let tempStart = start;
-      apiCallsTotal = 0;
-      while (tempStart < now) {
-        apiCallsTotal++;
-        tempStart += 86400;
-      }
-      apiCallsCompleted = 0;
+      apiCallsSuccess = 0;
       updateApiProgress();
       
       start = now - rangeSeconds;
@@ -669,13 +703,11 @@
         const end = Math.min(start + 86400, now);
         const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
           `?time_start=${start}&time_end=${end}&format=csv&api_key=${API_KEY}`;
-        const chunkData = await fetchCsvData(url);
+        const chunkData = await fetchCsvDataWithProgress(url);
         if (chunkData && chunkData.length > 0) {
           all = all.concat(chunkData);
         }
-        apiCallsCompleted++;
-        updateApiProgress();
-        // Add 100ms delay between API calls
+        // Add 100ms delay between API calls for server safety
         await new Promise(resolve => setTimeout(resolve, 100));
         start = end;
       }
@@ -687,26 +719,17 @@
       if (startTs >= endTs) return [];
       let all = [];
       let cur = startTs;
-      // Calculate number of API calls needed
-      let tempCur = startTs;
-      apiCallsTotal = 0;
-      while (tempCur < endTs) {
-        apiCallsTotal++;
-        tempCur += 86400;
-      }
-      apiCallsCompleted = 0;
+      apiCallsSuccess = 0;
       updateApiProgress();
       
       cur = startTs;
       while (cur < endTs) {
         const chunkEnd = Math.min(cur + 86400, endTs);
-        const chunkData = await fetchCsvData(`https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}?time_start=${cur}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`);
+        const chunkData = await fetchCsvDataWithProgress(`https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}?time_start=${cur}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`);
         if (chunkData && chunkData.length > 0) {
           all = all.concat(chunkData);
         }
-        apiCallsCompleted++;
-        updateApiProgress();
-        // Add 100ms delay between API calls
+        // Add 100ms delay between API calls for server safety
         await new Promise(resolve => setTimeout(resolve, 100));
         cur = chunkEnd;
       }
@@ -719,11 +742,11 @@
       const progressRow = document.getElementById('api-progress-row');
       if (!progressEl || !progressRow) return;
       
-      if (apiCallsTotal === 0 || apiCallsCompleted === apiCallsTotal) {
+      if (apiCallsSuccess === 0) {
         progressRow.style.display = 'none';
       } else {
         progressRow.style.display = 'flex';
-        progressEl.textContent = `${apiCallsCompleted}/${apiCallsTotal}`;
+        progressEl.textContent = `${apiCallsSuccess} successful fetch${apiCallsSuccess === 1 ? '' : 'es'}`;
       }
     }
 
@@ -743,7 +766,7 @@
     async function fetchForecastData() {
       // Open-Meteo request returning 15‑min resolution forecast (up to ~24h)
       const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&minutely_15=temperature_2m&timezone=America%2FNew_York&temperature_unit=fahrenheit&forecast_minutely_15=96";
-      const resp = await fetch(url);
+      const resp = await rateLimitedFetch(url);
       if (!resp.ok) return [];
       const j = await resp.json();
       if (!j.minutely_15 || !j.minutely_15.time) return [];
@@ -761,7 +784,7 @@
 
     async function fetchForecastHourlyModel(model, forecastDays) {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=${model}&forecast_days=${forecastDays}&temperature_unit=fahrenheit`;
-      const resp = await fetch(url);
+      const resp = await rateLimitedFetch(url);
       if (!resp.ok) return [];
       const j = await resp.json();
       if (!j.hourly || !j.hourly.time) return [];
@@ -780,7 +803,7 @@
 
     async function fetchForecastDataSeasonal() {
       const url = "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_seasonal_ensemble_mean_seamless&temporal_resolution=hourly_1&forecast_days=214&temperature_unit=fahrenheit";
-      const resp = await fetch(url);
+      const resp = await rateLimitedFetch(url);
       if (!resp.ok) return [];
       const j = await resp.json();
       if (!j.hourly || !j.hourly.time) return [];
@@ -798,7 +821,7 @@
       if (lastEnsembleData && lastEnsembleUrl === url && now - lastEnsembleFetchTs < 15 * 60 * 1000) {
         return lastEnsembleData;
       }
-      const resp = await fetch(url);
+      const resp = await rateLimitedFetch(url);
       if (!resp.ok) {
         return lastEnsembleData;
       }
@@ -833,7 +856,8 @@
     }
 
     // Update dashboard
-    async function updateDashboard() {
+    async function updateDashboard(isScheduled = false) {
+      isScheduledUpdate = isScheduled;
       // always fetch 24h of data for current/delta display
       const fullData = await fetchTempData();
       if (!fullData.length) return;
@@ -966,6 +990,14 @@
         return `hsl(220, ${sat}%, 52%)`;
       }
 
+      function getPlotSampleSize() {
+        return Infinity;
+      }
+
+      function sampleDataForPlot(dataArray) {
+        return dataArray;
+      }
+
       let currentColor;
       if (colorMode === 'temp') {
         currentColor = tempToColor(currentTemp);
@@ -1036,7 +1068,16 @@
       if (startVal && endVal) {
         const startTs = Math.floor(new Date(startVal).getTime()/1000);
         const endTs = Math.floor(new Date(endVal).getTime()/1000);
-        data = await fetchTempDataBetween(startTs, endTs);
+        // Only use cache if it's a user update (not scheduled) and matches cached range
+        if (!isScheduled && cachedStartTs === startTs && cachedEndTs === endTs) {
+          data = cachedData;
+        } else {
+          data = await fetchTempDataBetween(startTs, endTs);
+          cachedData = data;
+          cachedStartTs = startTs;
+          cachedEndTs = endTs;
+          cachedRangeSeconds = null;
+        }
       } else {
         // compute requested range for graph or sync-to-forecast
         let rangeSeconds;
@@ -1050,32 +1091,41 @@
           else if (unit === 'hours') rangeSeconds *= 3600;
           else if (unit === 'days') rangeSeconds *= 86400;
         }
-        data = await fetchTempDataRange(rangeSeconds);
+        // Only use cache if it's a user update (not scheduled) and same range
+        if (!isScheduled && cachedRangeSeconds === rangeSeconds) {
+          data = cachedData;
+        } else {
+          data = await fetchTempDataRange(rangeSeconds);
+          cachedData = data;
+          cachedRangeSeconds = rangeSeconds;
+          cachedStartTs = null;
+          cachedEndTs = null;
+        }
       }
       if (!data.length) return;
 
       // NEW: Set obs start time to first dot on the graph
       lastObsStartTime = data[0].ts;
 
-      let times = data.map(d => new Date(d.ts * 1000));
-      let temps = data.map(d => d.tempF);
-
+      const sampledData = sampleDataForPlot(data);
+      const times = sampledData.map(d => new Date(d.ts * 1000));
+      const temps = sampledData.map(d => d.tempF);
 
       let pointColors = [];
-      for (let i=0;i<data.length;i++){
+      for (let i = 0; i < sampledData.length; i++) {
         const t = temps[i];
         if (colorMode === 'temp'){
           pointColors.push(tempToColor(t));
         } else if (colorMode === 'delta') {
-          const targetTs = data[i].ts - deltaWindow*60;
-          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const targetTs = sampledData[i].ts - deltaWindow * 60;
+          const past = sampledData.find(d => d.ts >= targetTs) || sampledData[0];
           const dlt = t - past.tempF;
           pointColors.push(deltaToColor(dlt, deltaWindow));
         } else if (colorMode === 'trend') {
-          // use a fixed 10‑minute window to determine rising/ falling/flat
+          // use a fixed 30‑minute window to determine rising/ falling/flat
           const trendWindow = 30 * 60; // seconds
-          const targetTs = data[i].ts - trendWindow;
-          let past = data.find(d => d.ts >= targetTs) || data[0];
+          const targetTs = sampledData[i].ts - trendWindow;
+          const past = sampledData.find(d => d.ts >= targetTs) || sampledData[0];
           const dlt = t - past.tempF;
           if (dlt > 0) {
             pointColors.push('red');
@@ -1091,31 +1141,31 @@
       }
 
       // Calculate time range in seconds to determine if we should hide markers
-      const timeRangeSeconds = times.length > 0 ? times[times.length - 1].getTime() / 1000 - times[0].getTime() / 1000 : 0;
+      const timeRangeSeconds = times.length > 0 ? (times[times.length - 1].getTime() / 1000 - times[0].getTime() / 1000) : 0;
       const hideMarkers = timeRangeSeconds > 259200; // 72 hours = 259200 seconds
-      
-      // reduce number of line segments when point count is large
-      let segTimes = times;
-      let segTemps = temps;
-      let segColors = pointColors;
-      if (times.length - 1 > 2850) {
-        const maxSeg = 2850;
-        const step = Math.ceil((times.length - 1) / maxSeg);
-        segTimes = [];
-        segTemps = [];
-        segColors = [];
-        for (let i = 0; i < times.length; i += step) {
-          segTimes.push(times[i]);
-          segTemps.push(temps[i]);
-          segColors.push(pointColors[i]);
+
+      const segTimes = times;
+      const segTemps = temps;
+      const segColors = pointColors;
+
+      const traceSpans = [];
+      if (segTimes.length > 1) {
+        let spanStart = 0;
+        let spanEnd = 1;
+        let currentConstant = segColors[1] === segColors[0];
+
+        for (let i = 2; i < segTimes.length; i++) {
+          const nextConstant = segColors[i] === segColors[i - 1];
+          if (currentConstant && nextConstant && segColors[i] === segColors[spanStart]) {
+            spanEnd = i;
+          } else {
+            traceSpans.push({ start: spanStart, end: spanEnd });
+            spanStart = i - 1;
+            spanEnd = i;
+            currentConstant = nextConstant;
+          }
         }
-        // ensure the final point is included as endpoint
-        const lastIndex = times.length - 1;
-        if (segTimes[segTimes.length-1] !== times[lastIndex]) {
-          segTimes.push(times[lastIndex]);
-          segTemps.push(temps[lastIndex]);
-          segColors.push(pointColors[lastIndex]);
-        }
+        traceSpans.push({ start: spanStart, end: spanEnd });
       }
 
       // Helper to build hover text for a data point
@@ -1135,72 +1185,76 @@
       };
 
       const hoverTemplate = '%{x|%b %d %I:%M %p}<br>Temp: %{y:.1f}°F<extra></extra>';
+      const disableHover = timeRangeSeconds > 259200;
+      const useGl = timeRangeSeconds > 259200;
+      const traceType = useGl ? 'scattergl' : 'scatter';
+      const markerType = useGl ? 'scattergl' : 'scatter';
+      const lineHoverInfo = disableHover ? 'skip' : 'text';
+      const lineHoverTemplate = disableHover ? undefined : hoverTemplate;
+
       // build traces: one line segment per interval on the (possibly) reduced arrays
       const traces = [];
-      for (let i = 0; i < segTimes.length - 1; i++) {
-        // Find the data indices that match segTimes[i] and segTimes[i+1]
-        const dataIdxI = data.findIndex(d => new Date(d.ts * 1000).getTime() === segTimes[i].getTime());
-        const dataIdxI1 = data.findIndex(d => new Date(d.ts * 1000).getTime() === segTimes[i+1].getTime());
-        
-        const hoverTexts = [];
-        if (dataIdxI >= 0) {
-          const d = data[dataIdxI];
-          const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
-          const dewpt = calculateDewpoint(d.tempF, d.rh);
-          hoverTexts.push(buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts));
-        }
-        if (dataIdxI1 >= 0) {
-          const d = data[dataIdxI1];
-          const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
-          const dewpt = calculateDewpoint(d.tempF, d.rh);
-          hoverTexts.push(buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts));
-        }
+      for (const span of traceSpans) {
+        const start = span.start;
+        const end = span.end;
+        const currentPoint = sampledData[start];
+        const nextPoint = sampledData[end];
+        const hoverTexts = disableHover ? undefined : [
+          buildHoverText(currentPoint.tempF, currentPoint.rh, currentPoint.windMph, computeFeelsLike(currentPoint.tempF, currentPoint.rh, currentPoint.windMph), calculateDewpoint(currentPoint.tempF, currentPoint.rh), currentPoint.solarRadiation, currentPoint.ts),
+          buildHoverText(nextPoint.tempF, nextPoint.rh, nextPoint.windMph, computeFeelsLike(nextPoint.tempF, nextPoint.rh, nextPoint.windMph), calculateDewpoint(nextPoint.tempF, nextPoint.rh), nextPoint.solarRadiation, nextPoint.ts)
+        ];
 
-        traces.push({
-          x: [segTimes[i], segTimes[i+1]],
-          y: [segTemps[i], segTemps[i+1]],
-          type: 'scatter',
+        const trace = {
+          x: [segTimes[start], segTimes[end]],
+          y: [segTemps[start], segTemps[end]],
+          type: traceType,
           mode: 'lines',
-          line: { color: segColors[i], width: 4 },
-          text: hoverTexts,
-          hoverinfo: 'text',
-          hovertemplate: hoverTemplate,
+          line: { color: segColors[start], width: 4 },
+          hoverinfo: lineHoverInfo,
           showlegend: false
-        });
+        };
+        if (!disableHover) {
+          trace.text = hoverTexts;
+          trace.hovertemplate = lineHoverTemplate;
+        }
+        traces.push(trace);
       }
 
       // add feels-like line for observed values only (add it first so it's behind temp line)
-      const feelsLikeTemps = data.map(d => computeFeelsLike(d.tempF, d.rh, d.windMph));
-      const feelsLikeOpacity = hideMarkers ? 0.1 : 1; // 10% opacity for >72hr ranges
+      const feelsLikeTemps = sampledData.map(d => computeFeelsLike(d.tempF, d.rh, d.windMph));
+      const feelsLikeColor = hideMarkers ? 'rgb(40, 0, 0)' : 'red'; // very dark red for >72hr ranges
       
       traces.unshift({
         x: times,
         y: feelsLikeTemps,
-        type: 'scatter',
+        type: traceType,
         mode: 'lines',
-        line: { color: `rgba(255, 0, 0, ${feelsLikeOpacity})`, width: 2, dash: 'dot' },
+        line: { color: feelsLikeColor, width: 2, dash: 'dot', layer: 'below' },
         hoverinfo: 'text',
         showlegend: false
       });
 
-      // marker trace still uses full original data (but only if time range <= 72 hours)
+      // marker trace uses sampled display points only to avoid huge hover arrays
       if (!hideMarkers) {
-        const markerHoverText = data.map(d => {
+        const markerHoverText = disableHover ? undefined : sampledData.map(d => {
           const feels = computeFeelsLike(d.tempF, d.rh, d.windMph);
           const dewpt = calculateDewpoint(d.tempF, d.rh);
           return buildHoverText(d.tempF, d.rh, d.windMph, feels, dewpt, d.solarRadiation, d.ts);
         });
-        traces.push({
+        const markerTrace = {
           x: times,
           y: temps,
-          type: 'scatter',
+          type: markerType,
           mode: 'markers',
           marker: { size: 6, color: pointColors },
-          text: markerHoverText,
-          hoverinfo: 'text',
-          hovertemplate: '%{text}<extra></extra>',
+          hoverinfo: disableHover ? 'skip' : 'text',
           showlegend: false
-        });
+        };
+        if (!disableHover) {
+          markerTrace.text = markerHoverText;
+          markerTrace.hovertemplate = '%{text}<extra></extra>';
+        }
+        traces.push(markerTrace);
       }
 
       // optionally add forecast or ensemble lines if requested
@@ -1273,7 +1327,7 @@
               traces.push({
                 x: finalTimes,
                 y: values,
-                type: 'scatter',
+                type: traceType,
                 mode: 'lines',
                 line: { color: 'grey', width: 2, dash: 'dash' },
                 hovertemplate: '%{x|%b %d %I:%M %p}<br>' + memberKey + ': %{y:.1f}°F<extra></extra>',
@@ -1285,7 +1339,7 @@
             traces.push({
               x: finalTimes,
               y: adjustedMeanValues,
-              type: 'scatter',
+              type: traceType,
               mode: 'lines',
               line: { color: '#f0f0f0', width: 5, dash: 'dash' },
               hovertemplate: '%{x|%b %d %I:%M %p}<br>Ensemble Mean: %{y:.1f}°F<extra></extra>',
@@ -1558,7 +1612,7 @@
           traces.push({
             x: fcTimes,
             y: fcTemps,
-            type: 'scatter',
+            type: 'scattergl',
             mode: 'lines',
             line: { color: 'grey', width: 2, dash: 'dash' },
             name: 'Forecast',
@@ -1568,7 +1622,7 @@
         }
       }
 
-      Plotly.newPlot('temp-graph', traces, {
+      Plotly.react('temp-graph', traces, {
         margin: { t: 30, r: 30, l: 50, b: 50 },
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
@@ -1577,6 +1631,11 @@
         xaxis: { title: 'Time' },
         yaxis: { title: 'Temperature °F' }
       }, { responsive: true });
+
+      const traceCountEl = document.getElementById('trace-count');
+      if (traceCountEl) {
+        traceCountEl.textContent = `${traces.length}`;
+      }
 
       // Update current temp display with observed time only
       const tempTimeHtml = `<span class="temp-info-label">Observed:</span> ${currentTimeStr}`;
@@ -1772,32 +1831,64 @@
     // Schedule updates for 5 seconds after top of minute
     let updateTimer = null;
     
+    function getCurrentRangeSeconds() {
+      const startVal = document.getElementById('start-dt')?.value;
+      const endVal = document.getElementById('end-dt')?.value;
+      if (startVal && endVal) {
+        const startTs = Math.floor(new Date(startVal).getTime() / 1000);
+        const endTs = Math.floor(new Date(endVal).getTime() / 1000);
+        return Math.max(0, endTs - startTs);
+      }
+
+      const val = parseFloat(document.getElementById('range-value')?.value) || 24;
+      const unit = document.getElementById('range-units')?.value || 'hours';
+      let seconds = val;
+      if (unit === 'minutes') seconds *= 60;
+      else if (unit === 'hours') seconds *= 3600;
+      else if (unit === 'days') seconds *= 86400;
+      return seconds;
+    }
+
     function scheduleNextUpdate() {
       // Clear any existing timer
       if (updateTimer) clearTimeout(updateTimer);
-      
+
       const now = new Date();
       const currentMinute = now.getMinutes();
       const currentSecond = now.getSeconds();
       const currentMs = now.getMilliseconds();
-      
-      // Calculate milliseconds until next ":05" (5 seconds after top of minute)
+      const rangeSeconds = getCurrentRangeSeconds();
+      const longRange = rangeSeconds > 72 * 3600;
+
       let nextUpdateMs;
-      
-      if (currentSecond < 5 || (currentSecond === 5 && currentMs < 0)) {
-        // Next update is in the current minute at :05
-        nextUpdateMs = (5 - currentSecond) * 1000 - currentMs;
+      if (longRange) {
+        const quarterMinutes = [0, 15, 30, 45];
+        const nextQuarter = quarterMinutes.find(q => q > currentMinute || (q === currentMinute && currentSecond < 5));
+        const targetMinute = nextQuarter !== undefined ? nextQuarter : 0;
+        const targetHour = nextQuarter !== undefined ? now.getHours() : now.getHours() + 1;
+        const next = new Date(now);
+        next.setHours(targetHour);
+        next.setMinutes(targetMinute);
+        next.setSeconds(5);
+        next.setMilliseconds(0);
+        if (next <= now) {
+          next.setMinutes(next.getMinutes() + 15);
+        }
+        nextUpdateMs = next - now;
       } else {
-        // Next update is in the next minute at :05
-        nextUpdateMs = (60 - currentSecond + 5) * 1000 - currentMs;
+        if (currentSecond < 5 || (currentSecond === 5 && currentMs < 0)) {
+          nextUpdateMs = (5 - currentSecond) * 1000 - currentMs;
+        } else {
+          nextUpdateMs = (60 - currentSecond + 5) * 1000 - currentMs;
+        }
       }
-      
+
       // Ensure we have a positive value
       nextUpdateMs = Math.max(100, nextUpdateMs);
-      
+
       // Schedule this update
       updateTimer = setTimeout(() => {
-        updateDashboard();
+        updateDashboard(true);
         // After update, schedule the next one
         scheduleNextUpdate();
       }, nextUpdateMs);
