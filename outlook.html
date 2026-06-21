@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPC Day 4-8 GIF Slideshow</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #121212;
+      color: #f1f1f1;
+      min-height: 100vh;
+    }
+
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #1d1d1d;
+      border-bottom: 1px solid #333;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .progress-text {
+      width: 100%;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 14px;
+      background: #333;
+      border-radius: 7px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4ea8ff, #7c3aed);
+      width: 0%;
+      transition: width 0.25s ease;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+    }
+
+    .controls button {
+      min-width: 50px;
+    }
+
+    .info-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .info-card {
+      background: #1f2937;
+      padding: 12px 14px;
+      border-radius: 10px;
+      min-width: 160px;
+    }
+
+    .image-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #0f172a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 18px;
+      min-height: 640px;
+      position: relative;
+    }
+
+    .image-wrapper img {
+      max-width: 100%;
+      max-height: 78vh;
+      border-radius: 10px;
+      box-shadow: 0 0 24px rgba(0, 0, 0, 0.45);
+      display: block;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(18, 18, 18, 0.85);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #e2e8f0;
+      font-size: 1.1rem;
+      text-align: center;
+      padding: 16px;
+      pointer-events: none;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .failed-section {
+      margin-top: 28px;
+      padding: 16px;
+      background: #1f2937;
+      border-radius: 14px;
+      border: 1px solid #333;
+    }
+
+    .failed-section h2 {
+      margin: 0 0 12px 0;
+      font-size: 1.05rem;
+    }
+
+    .failed-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .failed-list a {
+      display: block;
+      color: #7dd3fc;
+      text-decoration: none;
+      background: #111827;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      word-break: break-word;
+    }
+
+    .error {
+      color: #f87171;
+      font-size: 1rem;
+      text-align: center;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="progress-text">
+      <strong>Preload progress:</strong> <span id="preloadLabel">0 / 0</span>
+      <span id="preloadEta" style="display:block; margin-top:6px; color:#a5b4fc; font-size:0.95rem;">ETA: --:--</span>
+      <div class="progress-track"><div id="preloadFill" class="progress-fill"></div></div>
+    </div>
+    <div class="progress-text">
+      <strong>Slideshow progress:</strong> <span id="slideLabel">0 / 0</span>
+      <div class="progress-track"><div id="slideFill" class="progress-fill"></div></div>
+    </div>
+  </div>
+
+  <main>
+    <div class="controls">
+      <button id="prevButton">◀</button>
+      <div><strong id="currentDate">2014-12-17</strong></div>
+      <button id="nextButton">▶</button>
+      <button id="fastScrubButton">Fast Scrub: Off</button>
+    </div>
+
+    <div class="info-row">
+      <div class="info-card"><strong>Total days:</strong> <span id="totalDays">0</span></div>
+      <div class="info-card"><strong>Testing:</strong> <span id="testingDate">2014-12-17</span></div>
+      <div class="info-card"><strong>Valid slides:</strong> <span id="validCount">0</span></div>
+      <div class="info-card"><strong>Skipped:</strong> <span id="failedCount">0</span></div>
+    </div>
+
+    <div class="image-wrapper">
+      <img id="slideImage" src="" alt="SPC Day 4-8 slideshow" />
+      <div id="overlay" class="overlay">Preloading images... Please wait.</div>
+    </div>
+
+    <div id="errorMessage" class="error"></div>
+
+    <section class="failed-section">
+      <h2>Skipped Dates</h2>
+      <div id="failedList" class="failed-list"></div>
+      <h2 style="margin-top:16px">Missing Page Errors</h2>
+      <div id="missingList" class="failed-list"></div>
+    </section>
+  </main>
+
+  <script>
+    const startDate = new Date(Date.UTC(2011, 3, 9));
+    const endDate = new Date(Date.UTC(2024, 6, 22));
+    const entries = []; // {date: Date, time: '0730'|'0830'|'1930'}
+    const oneDay = 24 * 60 * 60 * 1000;
+    const times = ['1200', '0830','0730','1100'];
+
+    for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + oneDay)) {
+      for (const t of times) entries.push({date: new Date(d), time: t});
+    }
+
+    const totalDays = entries.length;
+    const preloadLabel = document.getElementById('preloadLabel');
+    const preloadFill = document.getElementById('preloadFill');
+    const slideLabel = document.getElementById('slideLabel');
+    const slideFill = document.getElementById('slideFill');
+    const currentDateEl = document.getElementById('currentDate');
+    const testingDateEl = document.getElementById('testingDate');
+    const totalDaysEl = document.getElementById('totalDays');
+    const validCountEl = document.getElementById('validCount');
+    const failedCountEl = document.getElementById('failedCount');
+    const failedListEl = document.getElementById('failedList');
+    const preloadEtaEl = document.getElementById('preloadEta');
+    const slideImage = document.getElementById('slideImage');
+    const overlay = document.getElementById('overlay');
+    const prevButton = document.getElementById('prevButton');
+    const nextButton = document.getElementById('nextButton');
+    const fastScrubButton = document.getElementById('fastScrubButton');
+    const errorMessage = document.getElementById('errorMessage');
+
+    totalDaysEl.textContent = totalDays;
+
+    const allSlides = []; // {date, time, url, image}
+    const failedDates = []; // entries that failed image but no missing-page message
+    const missingPages = []; // entries where html reported missing page text
+    let testedCount = 0;
+    let currentSlideIndex = 0;
+    let preloadFinished = false;
+    let fastScrubTimer = null;
+    let fastScrubDirection = null;
+    let activeChecks = 0;
+    let preloadStartTime = null;
+
+    function formatDate(date) {
+      const yyyy = date.getUTCFullYear();
+      const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(date.getUTCDate()).padStart(2, '0');
+      return `${yyyy}${mm}${dd}`;
+    }
+
+    function imageUrl(entry) {
+      const yyyymmdd = formatDate(entry.date);
+      const year = entry.date.getUTCFullYear();
+      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}_prt.gif`;
+   
+    }
+
+    function htmlCheckUrl(entry) {
+      const yyyymmdd = formatDate(entry.date);
+      const year = entry.date.getUTCFullYear();
+      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}.html`;
+    }
+
+    function backupHtmlUrl(entry) {
+      const yyyymmdd = formatDate(entry.date);
+      const year = entry.date.getUTCFullYear();
+      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}.html`;
+    }
+
+    function renderFailedList() {
+      failedListEl.innerHTML = '';
+      failedDates.forEach(obj => {
+        const entry = obj.entry || obj;
+        const link = document.createElement('a');
+        const href = obj.checkUrl || htmlCheckUrl(entry);
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}`;
+        failedListEl.appendChild(link);
+      });
+      failedCountEl.textContent = failedDates.length;
+    }
+
+    function renderMissingList() {
+      const missingListEl = document.getElementById('missingList');
+      missingListEl.innerHTML = '';
+      missingPages.forEach(obj => {
+        const entry = obj.entry || obj;
+        const href = obj.checkUrl || obj.backupUrl || htmlCheckUrl(entry);
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}`;
+        missingListEl.appendChild(link);
+      });
+    }
+
+    function formatEta(seconds) {
+      if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
+      const minutes = Math.floor(seconds / 60);
+      const secs = Math.round(seconds % 60);
+      return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function updatePreloadProgress() {
+      preloadLabel.textContent = `${testedCount} / ${totalDays} (${((testedCount / totalDays) * 100).toFixed(3)}%)`;
+      preloadFill.style.width = `${((testedCount / totalDays) * 100).toFixed(3)}%`;
+      if (testedCount > 0) {
+        const elapsedMs = Date.now() - (preloadStartTime || Date.now());
+        const avgMsPerEntry = elapsedMs / testedCount;
+        const remainingMs = avgMsPerEntry * (totalDays - testedCount);
+        preloadEtaEl.textContent = `ETA: ${formatEta(remainingMs / 1000)}`;
+        const e = entries[Math.min(testedCount - 1, entries.length - 1)];
+        testingDateEl.textContent = `${formatDate(e.date)} ${e.time}`;
+      } else {
+        preloadEtaEl.textContent = 'ETA: --:--';
+        testingDateEl.textContent = 'Starting...';
+      }
+    }
+
+    function updateSlideProgress() {
+      const total = allSlides.length;
+      const current = total ? currentSlideIndex + 1 : 0;
+      slideLabel.textContent = `${current} / ${total} (${total ? ((current / total) * 100).toFixed(3) : '0.000'}%)`;
+      slideFill.style.width = total ? `${((current / total) * 100).toFixed(3)}%` : '0%';
+    }
+
+    function showSlide(index) {
+      if (!allSlides.length) {
+        currentDateEl.textContent = 'No slides loaded yet';
+        slideImage.src = '';
+        updateSlideProgress();
+        return;
+      }
+      currentSlideIndex = (index + allSlides.length) % allSlides.length;
+      const slide = allSlides[currentSlideIndex];
+      currentDateEl.textContent = `${slide.date.getUTCFullYear()}-${String(slide.date.getUTCMonth() + 1).padStart(2, '0')}-${String(slide.date.getUTCDate()).padStart(2, '0')}`;
+      if (slide.image && slide.image.src) {
+        slideImage.src = slide.image.src;
+      } else {
+        slideImage.src = slide.url;
+      }
+      errorMessage.textContent = '';
+      updateSlideProgress();
+    }
+
+    function showOverlay(message) {
+      overlay.textContent = message;
+      overlay.classList.remove('hidden');
+    }
+
+    function hideOverlay() {
+      overlay.classList.add('hidden');
+    }
+
+    function skipToNextSlide() {
+      if (!allSlides.length) return;
+      showSlide(currentSlideIndex + 1);
+    }
+
+    function setFastScrub(direction) {
+      if (fastScrubTimer) {
+        clearInterval(fastScrubTimer);
+        fastScrubTimer = null;
+      }
+      if (!direction) {
+        fastScrubDirection = null;
+        fastScrubButton.textContent = 'Fast Scrub: Off';
+        return;
+      }
+      fastScrubDirection = direction;
+      fastScrubButton.textContent = `Fast Scrub: ${direction === 'forward' ? 'Forward' : 'Backward'}`;
+      fastScrubTimer = setInterval(() => {
+        if (direction === 'forward') {
+          showSlide(currentSlideIndex + 1);
+        } else {
+          showSlide(currentSlideIndex - 1);
+        }
+      }, 150);
+    }
+
+    function toggleFastScrub(direction) {
+      if (fastScrubDirection === direction) {
+        setFastScrub(null);
+      } else {
+        setFastScrub(direction);
+      }
+    }
+
+    function preloadImage(entry) {
+      return new Promise(resolve => {
+        const img = new Image();
+        const url = imageUrl(entry);
+        img.onload = () => resolve({entry, url, image: img, success: true});
+        img.onerror = () => resolve({entry, url, success: false});
+        img.src = url;
+      });
+    }
+
+    async function preloadAll() {
+      const concurrency = 12;
+      let active = 0;
+      let nextIndex = 0;
+
+      function finishIfDone() {
+        if (nextIndex >= entries.length && active === 0 && activeChecks === 0) {
+          preloadFinished = true;
+          allSlides.sort((a, b) => a.date.getTime() - b.date.getTime() || a.time.localeCompare(b.time));
+          failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+          missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+          renderFailedList();
+          renderMissingList();
+          showOverlay('Preload complete. Use arrow keys or buttons to browse.');
+          setTimeout(hideOverlay, 1200);
+          updateSlideProgress();
+        }
+      }
+
+      function checkHtml(entry, primaryUrl, backupUrl) {
+        activeChecks += 1;
+        return fetch(backupUrl, { mode: 'cors' })
+          .then(resp => resp.text().then(text => ({ ok: resp.ok, text })))
+          .then(r => {
+            if (!r.ok || (r.text && r.text.includes("The page you've requested cannot be found."))) {
+              return fetch(primaryUrl, { mode: 'cors' })
+                .then(resp2 => resp2.text().then(text2 => ({ ok: resp2.ok, text: text2 })))
+                .then(r2 => {
+                  if (!r2.ok || (r2.text && r2.text.includes("The page you've requested cannot be found."))) {
+                    missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
+                    missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                    renderMissingList();
+                  } else {
+                    failedDates.push({ entry, checkUrl: primaryUrl });
+                    failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                    renderFailedList();
+                  }
+                });
+            }
+            failedDates.push({ entry, checkUrl: backupUrl });
+            failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+            renderFailedList();
+          })
+          .catch(() => {
+            return fetch(primaryUrl, { mode: 'cors' })
+              .then(resp => resp.text().then(text => ({ ok: resp.ok, text })))
+              .then(r => {
+                if (!r.ok || (r.text && r.text.includes("The page you've requested cannot be found."))) {
+                  missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
+                  missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                  renderMissingList();
+                } else {
+                  failedDates.push({ entry, checkUrl: primaryUrl });
+                  failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                  renderFailedList();
+                }
+              })
+              .catch(() => {
+                missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
+                missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                renderMissingList();
+              });
+          })
+          .finally(() => {
+            activeChecks -= 1;
+            finishIfDone();
+          });
+      }
+
+      function startNext() {
+        while (active < concurrency && nextIndex < entries.length) {
+          const entry = entries[nextIndex++];
+          active += 1;
+          preloadImage(entry).then(result => {
+            testedCount += 1;
+            updatePreloadProgress();
+            if (result.success) {
+              const slideEntry = {date: result.entry.date, time: result.entry.time, url: result.url, image: result.image};
+              const insertIndex = allSlides.findIndex(slide => slide.date.getTime() > result.entry.date.getTime() || (slide.date.getTime() === result.entry.date.getTime() && slide.time > result.entry.time));
+              if (insertIndex === -1) {
+                allSlides.push(slideEntry);
+              } else {
+                allSlides.splice(insertIndex, 0, slideEntry);
+              }
+              validCountEl.textContent = allSlides.length;
+              if (allSlides.length === 1) {
+                showSlide(0);
+              }
+            } else {
+              const primaryUrl = htmlCheckUrl(entry);
+              const backupUrl = backupHtmlUrl(entry);
+              checkHtml(entry, primaryUrl, backupUrl);
+            }
+            active -= 1;
+            if (nextIndex < entries.length) {
+              startNext();
+            }
+            finishIfDone();
+          });
+        }
+      }
+
+      preloadStartTime = Date.now();
+      updatePreloadProgress();
+      showOverlay('Preloading images...');
+      startNext();
+    }
+
+    slideImage.addEventListener('error', () => {
+      const brokenEntry = allSlides[currentSlideIndex];
+      if (brokenEntry) {
+        if (!failedDates.some(e => e.date.getTime() === brokenEntry.date.getTime() && e.time === brokenEntry.time)) {
+          failedDates.push({date: brokenEntry.date, time: brokenEntry.time});
+          failedDates.sort((a, b) => a.date.getTime() - b.date.getTime() || a.time.localeCompare(b.time));
+          renderFailedList();
+        }
+        allSlides.splice(currentSlideIndex, 1);
+        if (allSlides.length === 0) {
+          currentDateEl.textContent = 'No valid slides';
+          slideImage.src = '';
+          updateSlideProgress();
+          return;
+        }
+        showSlide(currentSlideIndex);
+      }
+    });
+
+    prevButton.addEventListener('click', () => {
+      showSlide(currentSlideIndex - 1);
+      setFastScrub(null);
+    });
+    nextButton.addEventListener('click', () => {
+      showSlide(currentSlideIndex + 1);
+      setFastScrub(null);
+    });
+    fastScrubButton.addEventListener('click', () => toggleFastScrub('forward'));
+
+    window.addEventListener('keydown', event => {
+      if (event.repeat) return;
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        showSlide(currentSlideIndex + 1);
+        setFastScrub(null);
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        showSlide(currentSlideIndex - 1);
+        setFastScrub(null);
+      }
+      if (event.key === '>' || event.key === '.') {
+        event.preventDefault();
+        toggleFastScrub('forward');
+      }
+      if (event.key === '<' || event.key === ',') {
+        event.preventDefault();
+        toggleFastScrub('backward');
+      }
+    });
+
+    totalDaysEl.textContent = totalDays;
+    failedCountEl.textContent = 0;
+    validCountEl.textContent = 0;
+    slideLabel.textContent = '0 / 0 (0.000%)';
+    preloadLabel.textContent = `0 / ${totalDays} (0.000%)`;
+    updateSlideProgress();
+    updatePreloadProgress();
+    preloadAll();
+  </script>
+</body>
+</html>
