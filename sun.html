@@ -72,17 +72,18 @@ body::before {
     border-radius: 22px;
     background: rgba(10, 22, 45, 0.92);
     border: 1px solid rgba(71, 126, 255, 0.12);
+    position: relative;
 }
 .metric-label {
     color: #8da8d4;
-    font-size: 0.78rem;
+    font-size: 0.86rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
 }
 .metric-value {
-    font-size: 1.8rem;
+    font-size: 2.2rem;
     font-weight: 700;
-    line-height: 1.1;
+    line-height: 1.05;
     color: #f5fbff;
 }
 .meta-grid {
@@ -124,34 +125,109 @@ body::before {
     background: rgba(81, 133, 255, 0.24);
     border-radius: 999px;
 }
+.event-list-container {
+    max-height: calc(50vh - 40px);
+    overflow-y: auto;
+}
 .event-list {
     display: grid;
     gap: 18px;
 }
+.next-event-card {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 0.1fr 0.9fr;
+    gap: 14px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    min-height: 22vh;
+    border-radius: 28px;
+    background: rgba(14, 26, 55, 0.98);
+    border: 1px solid rgba(98, 154, 255, 0.24);
+}
+.next-event-label {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    color: #9cb8e9;
+    font-size: 0.95rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    align-self: start;
+}
+.next-event-countdown {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    font-size: 3.4rem;
+    font-weight: 700;
+    color: #f4fbff;
+    text-align: right;
+    align-self: start;
+}
+.next-event-value {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+    font-size: 3.2rem;
+    font-weight: 700;
+    color: #f4fbff;
+    line-height: 1.03;
+    align-self: end;
+}
+.next-event-time {
+    grid-column: 2 / 3;
+    grid-row: 2 / 3;
+    font-size: 2rem;
+    font-weight: 450;
+    color: #e8f2ff;
+    text-align: right;
+    align-self: end;
+}
 .event-card {
     display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
     gap: 10px;
-    padding: 18px 20px;
+    padding: 14px 16px;
     border-radius: 24px;
     background: rgba(9, 17, 31, 0.95);
     border: 1px solid rgba(78, 134, 255, 0.14);
+    min-height: 70px;
 }
 .event-label {
     color: #92a9d8;
-    font-size: 0.82rem;
+    font-size: 1rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    grid-column: 1;
+    grid-row: 1;
 }
 .event-value {
-    font-size: 1.45rem;
-    font-weight: 700;
+    font-size: 1.3rem;
+    font-weight: 600;
     color: #f4fbff;
+    grid-column: 1;
+    grid-row: 2;
 }
 .event-subtitle {
     display: flex;
-    justify-content: space-between;
-    font-size: 0.95rem;
-    color: #b7c8e7;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
+    font-size: 2.6rem;
+    font-weight: 500;
+    color: #e8f2ff;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    min-height: 70px;
+    padding-left: 12px;
+}
+.metric-alt-text {
+    position: absolute;
+    bottom: 4px;
+    right: 8px;
+    font-size: 0.7rem;
+    color: #6b7fa8;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
 @media (max-width: 960px) {
     .dashboard {
@@ -159,6 +235,12 @@ body::before {
     }
     .current-panel {
         position: static;
+    }
+    .next-event-card {
+        min-height: 34vh;
+    }
+    .event-list-container {
+        max-height: 40vh;
     }
 }
 </style>
@@ -176,14 +258,17 @@ body::before {
                 <div class="metric">
                     <div class="metric-label">Altitude</div>
                     <div id="alt" class="metric-value">--.--°</div>
+                    <div id="altAlt" class="metric-alt-text">-- °/s</div>
                 </div>
                 <div class="metric">
                     <div class="metric-label">Azimuth</div>
                     <div id="az" class="metric-value">--.--°</div>
+                    <div id="azAlt" class="metric-alt-text">-- | -- °/s</div>
                 </div>
                 <div class="metric">
                     <div class="metric-label">Height Speed</div>
                     <div id="rate" class="metric-value">--.--°/hr</div>
+                    <div id="rateAlt" class="metric-alt-text">-- °/hr/s</div>
                 </div>
                 <div class="metric">
                     <div class="metric-label">Since Sunrise</div>
@@ -191,10 +276,6 @@ body::before {
                 </div>
             </div>
             <div class="meta-grid">
-                <div class="meta-item">
-                    <div class="meta-label">Max Height Today</div>
-                    <div id="maxAlt" class="meta-value">--.--°</div>
-                </div>
                 <div class="meta-item">
                     <div class="meta-label">Sunrise</div>
                     <div id="sunriseTime" class="meta-value">--:--</div>
@@ -207,8 +288,11 @@ body::before {
         </section>
 
         <aside class="panel events-panel">
-            <div class="panel-title">Upcoming Sun Events</div>
-            <div id="eventList" class="event-list"></div>
+            <div class="panel-title">Sun Events</div>
+            <div id="nextEventCard" class="next-event-card"></div>
+            <div class="event-list-container">
+                <div id="eventList" class="event-list"></div>
+            </div>
         </aside>
     </div>
 </div>
@@ -339,6 +423,58 @@ function findSunriseSunset(now) {
     return {prevSunrise, nextSunrise, prevSunset, nextSunset};
 }
 
+function findAllCrossings(targetAlt, startTime, endTime) {
+    const crossings = [];
+    let t = new Date(startTime);
+    const step = 60000;
+    let prevAlt = solarPosition(t).apparentAltitude;
+    let lastReportedTime = -1;
+
+    while (t <= endTime) {
+        const currAlt = solarPosition(t).apparentAltitude;
+        if ((prevAlt < targetAlt && currAlt >= targetAlt) || (prevAlt > targetAlt && currAlt <= targetAlt)) {
+            const crossing = refineCrossing(targetAlt, new Date(t.getTime() - step), t);
+            if (Math.abs(crossing.getTime() - lastReportedTime) > 60000) {
+                crossings.push({
+                    time: crossing,
+                    rising: currAlt > prevAlt
+                });
+                lastReportedTime = crossing.getTime();
+                t = new Date(crossing.getTime() + 60000);
+                prevAlt = solarPosition(t).apparentAltitude;
+                continue;
+            }
+        }
+        t = new Date(t.getTime() + step);
+        prevAlt = currAlt;
+    }
+    return crossings;
+}
+
+function findMinAltitude(startTime, endTime) {
+    if (!startTime || !endTime) return null;
+    let best = {time: new Date(startTime), alt: solarPosition(startTime).apparentAltitude};
+    const step = 5 * 60000;
+    for (let t = new Date(startTime.getTime()); t <= endTime; t = new Date(t.getTime() + step)) {
+        const alt = solarPosition(t).apparentAltitude;
+        if (alt < best.alt) best = {time: new Date(t), alt};
+    }
+    for (let offset = -600; offset <= 600; offset += 10) {
+        const t = new Date(best.time.getTime() + offset * 1000);
+        if (t < startTime || t > endTime) continue;
+        const alt = solarPosition(t).apparentAltitude;
+        if (alt < best.alt) best = {time: new Date(t), alt};
+    }
+    // Final refinement to 0.0001 degree precision
+    for (let offset = -100; offset <= 100; offset += 1) {
+        const t = new Date(best.time.getTime() + offset * 100);
+        if (t < startTime || t > endTime) continue;
+        const alt = solarPosition(t).apparentAltitude;
+        if (alt < best.alt) best = {time: new Date(t), alt};
+    }
+    return best;
+}
+
 function findMaxAltitude(start, end) {
     if (!start || !end) return null;
     let best = {time: new Date(start), alt: solarPosition(start).apparentAltitude};
@@ -352,6 +488,96 @@ function findMaxAltitude(start, end) {
         if (t < start || t > end) continue;
         const alt = solarPosition(t).apparentAltitude;
         if (alt > best.alt) best = {time: new Date(t), alt};
+    }
+    return best;
+}
+
+function altitudeSpeedAtTime(date) {
+    const pos1 = solarPosition(date);
+    const pos2 = solarPosition(new Date(date.getTime() + 1000));
+    return (pos2.altitude - pos1.altitude) * 3600;
+}
+
+function refineSpeedCrossing(targetSpeed, low, high) {
+    let t1 = new Date(low);
+    let t2 = new Date(high);
+    for (let i = 0; i < 25; i++) {
+        const mid = new Date((t1.getTime() + t2.getTime()) / 2);
+        const speed = altitudeSpeedAtTime(mid);
+        if ((altitudeSpeedAtTime(t1) < targetSpeed && speed >= targetSpeed) ||
+            (altitudeSpeedAtTime(t1) > targetSpeed && speed <= targetSpeed)) {
+            t2 = mid;
+        } else {
+            t1 = mid;
+        }
+    }
+    return t2;
+}
+
+function findAllSpeedCrossings(targetSpeed, startTime, endTime) {
+    const crossings = [];
+    let t = new Date(startTime);
+    const step = 60000;
+    let prevSpeed = altitudeSpeedAtTime(t);
+    let lastReportedTime = -1;
+
+    while (t <= endTime) {
+        const currSpeed = altitudeSpeedAtTime(t);
+        if ((prevSpeed < targetSpeed && currSpeed >= targetSpeed) || (prevSpeed > targetSpeed && currSpeed <= targetSpeed)) {
+            const crossing = refineSpeedCrossing(targetSpeed, new Date(t.getTime() - step), t);
+            if (Math.abs(crossing.getTime() - lastReportedTime) > 60000) {
+                crossings.push({
+                    time: crossing,
+                    rising: currSpeed > prevSpeed
+                });
+                lastReportedTime = crossing.getTime();
+                t = new Date(crossing.getTime() + 60000);
+                prevSpeed = altitudeSpeedAtTime(t);
+                continue;
+            }
+        }
+        t = new Date(t.getTime() + step);
+        prevSpeed = currSpeed;
+    }
+    return crossings;
+}
+
+function findMaxAltitudeSpeed(start, end) {
+    if (!start || !end) return null;
+    let best = {time: new Date(start), speed: altitudeSpeedAtTime(start)};
+    const step = 2 * 60000;
+    for (let t = new Date(start.getTime()); t <= end; t = new Date(t.getTime() + step)) {
+        const speed = altitudeSpeedAtTime(t);
+        if (speed > best.speed) best = {time: new Date(t), speed};
+    }
+    for (let offset = -180; offset <= 180; offset += 1) {
+        const t = new Date(best.time.getTime() + offset * 1000);
+        if (t < start || t > end) continue;
+        const speed = altitudeSpeedAtTime(t);
+        if (speed > best.speed) best = {time: new Date(t), speed};
+    }
+    return best;
+}
+
+function findMinAltitudeSpeed(startTime, endTime) {
+    if (!startTime || !endTime) return null;
+    let best = {time: new Date(startTime), speed: altitudeSpeedAtTime(startTime)};
+    const step = 5 * 60000;
+    for (let t = new Date(startTime.getTime()); t <= endTime; t = new Date(t.getTime() + step)) {
+        const speed = altitudeSpeedAtTime(t);
+        if (speed < best.speed) best = {time: new Date(t), speed};
+    }
+    for (let offset = -600; offset <= 600; offset += 10) {
+        const t = new Date(best.time.getTime() + offset * 1000);
+        if (t < startTime || t > endTime) continue;
+        const speed = altitudeSpeedAtTime(t);
+        if (speed < best.speed) best = {time: new Date(t), speed};
+    }
+    for (let offset = -100; offset <= 100; offset += 1) {
+        const t = new Date(best.time.getTime() + offset * 100);
+        if (t < startTime || t > endTime) continue;
+        const speed = altitudeSpeedAtTime(t);
+        if (speed < best.speed) best = {time: new Date(t), speed};
     }
     return best;
 }
@@ -373,87 +599,257 @@ function formatCountdown(ms) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function buildEventCards(now) {
-    const {prevSunrise, nextSunrise, prevSunset, nextSunset} = findSunriseSunset(now);
-    const isAfterSunset = nextSunset && now >= nextSunset;
-    const isBeforeSunrise = nextSunrise && now < nextSunrise;
-    const dayStart = isAfterSunset || isBeforeSunrise ? nextSunrise : prevSunrise;
-    const dayEnd = isAfterSunset || isBeforeSunrise ? findNextCrossing(refractionSunrise, nextSunrise, false) : nextSunset;
+let cachedExtremum = { maxInfo: null, minInfo: null };
+let cachedSpeedExtremum = { maxInfo: null, minInfo: null };
 
-    const maxInfo = findMaxAltitude(dayStart, dayEnd);
-    const currentAlt = solarPosition(now).apparentAltitude;
+function getCachedExtrema(now, searchEnd) {
+    let maxInfo = cachedExtremum.maxInfo;
+    let minInfo = cachedExtremum.minInfo;
+
+    if (!maxInfo || now >= maxInfo.time) {
+        maxInfo = findMaxAltitude(now, searchEnd);
+        cachedExtremum.maxInfo = maxInfo;
+    }
+
+    if (!minInfo || now >= minInfo.time) {
+        minInfo = findMinAltitude(now, searchEnd);
+        cachedExtremum.minInfo = minInfo;
+    }
+
+    return { maxInfo, minInfo };
+}
+
+function getCachedSpeedExtrema(now, searchEnd) {
+    let maxInfo = cachedSpeedExtremum.maxInfo;
+    let minInfo = cachedSpeedExtremum.minInfo;
+
+    if (!maxInfo || now >= maxInfo.time) {
+        maxInfo = findMaxAltitudeSpeed(now, searchEnd);
+        cachedSpeedExtremum.maxInfo = maxInfo;
+    }
+
+    if (!minInfo || now >= minInfo.time) {
+        minInfo = findMinAltitudeSpeed(now, searchEnd);
+        cachedSpeedExtremum.minInfo = minInfo;
+    }
+
+    return { maxInfo, minInfo };
+}
+
+function buildEventCards(now) {
+    const searchEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const {prevSunrise, nextSunrise, prevSunset, nextSunset} = findSunriseSunset(now);
     const events = [];
 
-    if (nextSunrise && nextSunrise > now) {
-        events.push({label: 'Next Sunrise', time: nextSunrise});
+    // Determine current day boundaries for reference
+    let dayStart, dayEnd;
+    if (prevSunset && now >= prevSunset) {
+        dayStart = nextSunrise;
+        dayEnd = findNextCrossing(refractionSunrise, nextSunrise, false);
+    } else if (prevSunrise && now >= prevSunrise) {
+        dayStart = prevSunrise;
+        dayEnd = nextSunset;
+    } else {
+        dayStart = nextSunrise;
+        dayEnd = findNextCrossing(refractionSunrise, nextSunrise, false);
     }
-    if (nextSunset && nextSunset > now) {
+
+    // Use cached max/min until their times pass
+    const { maxInfo, minInfo } = getCachedExtrema(now, searchEnd);
+
+    // Add max and min altitude as events with degree notation
+    if (maxInfo) {
+        events.push({label: `Maximum (${maxInfo.alt.toFixed(4)}°)`, time: maxInfo.time});
+    }
+    if (minInfo) {
+        events.push({label: `Minimum (${minInfo.alt.toFixed(4)}°)`, time: minInfo.time});
+    }
+
+    // Add sunrise and sunset
+    if (nextSunrise && nextSunrise <= searchEnd) {
+        events.push({label: 'Sunrise', time: nextSunrise});
+    }
+    if (nextSunset && nextSunset <= searchEnd) {
         events.push({label: 'Sunset', time: nextSunset});
     }
 
-    if (maxInfo && maxInfo.time > now) {
-        events.push({label: `Maximum Altitude ${maxInfo.alt.toFixed(2)}°`, time: maxInfo.time});
-    }
-
-    if (maxInfo) {
-        let nextThreshold = Math.ceil((currentAlt + 1e-9) / 6) * 6;
-        if (nextThreshold < 0) nextThreshold = 0;
-        for (let alt = nextThreshold; alt <= maxInfo.alt + 1e-9; alt += 6) {
-            const eventTime = findNextCrossing(alt, now, true);
-            if (eventTime && eventTime > now) {
-                events.push({label: `Cross ${alt.toFixed(0)}°`, time: eventTime});
-            }
-        }
-        for (let alt = Math.floor(maxInfo.alt / 6) * 6; alt >= 0; alt -= 6) {
-            const eventTime = findNextCrossing(alt, maxInfo.time, false);
-            if (eventTime && eventTime > now) {
-                events.push({label: `Descend ${alt.toFixed(0)}°`, time: eventTime});
-            }
+    // Find all 6-degree crossings in next 24 hours
+    for (let alt = 0; alt <= 90; alt += 6) {
+        const crossings = findAllCrossings(alt, now, searchEnd);
+        for (const crossing of crossings) {
+            if (alt === 0) continue;
+            const label = crossing.rising ? `Cross ${alt}°` : `Descend ${alt}°`;
+            events.push({label, time: crossing.time});
         }
     }
 
-    [
-        {label: 'Civil Twilight', alt: -6, rising: false},
-        {label: 'Nautical Twilight', alt: -12, rising: false},
-        {label: 'Astronomical Twilight', alt: -18, rising: false}
-    ].forEach((item) => {
-        const eventTime = findNextCrossing(item.alt, now, item.rising);
-        if (eventTime && eventTime > now) {
-            events.push({label: item.label, time: eventTime});
-        }
-    });
+    // Add all twilight events (morning and evening)
+    const twilights = [
+        {label: 'Civil Twilight Start (Morning)', alt: -6, rising: true},
+        {label: 'Civil Twilight End (Evening)', alt: -6, rising: false},
+        {label: 'Nautical Twilight Start (Morning)', alt: -12, rising: true},
+        {label: 'Nautical Twilight End (Evening)', alt: -12, rising: false},
+        {label: 'Astronomical Twilight Start (Morning)', alt: -18, rising: true},
+        {label: 'Astronomical Twilight End (Evening)', alt: -18, rising: false}
+    ];
 
+    for (const twilight of twilights) {
+        const crossings = findAllCrossings(twilight.alt, now, searchEnd);
+        for (const crossing of crossings) {
+            if ((twilight.rising && crossing.rising) || (!twilight.rising && !crossing.rising)) {
+                events.push({label: twilight.label, time: crossing.time});
+            }
+        }
+    }
+
+    // New: Altitude Speed Events
+    const { maxInfo: speedMaxInfo, minInfo: speedMinInfo } = getCachedSpeedExtrema(now, searchEnd);
+
+    // Add max and min altitude speed as events
+    if (speedMaxInfo) {
+        events.push({label: `Max Speed (${speedMaxInfo.speed.toFixed(5)}°/hr)`, time: speedMaxInfo.time});
+    }
+    if (speedMinInfo) {
+        events.push({label: `Min Speed (${speedMinInfo.speed.toFixed(5)}°/hr)`, time: speedMinInfo.time});
+    }
+
+    // Find all degree crossings for altitude speed (except 0)
+    const maxSpeed = speedMaxInfo ? Math.abs(speedMaxInfo.speed) : 15;
+    const minSpeed = speedMinInfo ? Math.abs(speedMinInfo.speed) : 0;
+    const maxThreshold = Math.ceil(Math.max(maxSpeed, minSpeed)) + 2;
+
+    // Positive speeds
+    for (let speed = 1; speed <= maxThreshold; speed++) {
+        const crossings = findAllSpeedCrossings(speed, now, searchEnd);
+        for (const crossing of crossings) {
+            const label = crossing.rising ? `Speed Rising ${speed}°/hr` : `Speed Falling ${speed}°/hr`;
+            events.push({label, time: crossing.time});
+        }
+    }
+
+    // Negative speeds
+    for (let speed = -1; speed >= -maxThreshold; speed--) {
+        const crossings = findAllSpeedCrossings(speed, now, searchEnd);
+        for (const crossing of crossings) {
+            const label = crossing.rising ? `Speed Rising ${speed}°/hr` : `Speed Falling ${speed}°/hr`;
+            events.push({label, time: crossing.time});
+        }
+    }
+
+    // Sort and deduplicate
     const unique = [];
     const seen = new Set();
     events.sort((a, b) => a.time - b.time).forEach((event) => {
-        const id = `${event.label}|${event.time.getTime()}`;
+        const id = `${event.label}|${Math.round(event.time.getTime() / 1000)}`;
         if (!seen.has(id)) {
             seen.add(id);
             unique.push(event);
         }
     });
-    return {events: unique, maxInfo, dayStart, dayEnd};
+
+    return {events: unique, maxInfo, minInfo, dayStart, dayEnd, prevSunset};
 }
 
-function updateUI() {
+let displayedAlt = null;
+let displayedAz = null;
+
+function normalizeAzimuth(angle) {
+    return ((angle % 360) + 360) % 360;
+}
+
+function shortestAngleDiff(from, to) {
+    let diff = normalizeAzimuth(to) - normalizeAzimuth(from);
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return diff;
+}
+
+function azimuthToCardinal(azimuth) {
+    const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const normalized = normalizeAzimuth(azimuth);
+    const index = Math.round(normalized / 22.5) % 16;
+    return directions[index];
+}
+
+function azimuthSpeedAtTime(date) {
+    const pos1 = solarPosition(date);
+    const pos2 = solarPosition(new Date(date.getTime() + 1000));
+    const az1 = normalizeAzimuth(pos1.azimuth);
+    const az2 = normalizeAzimuth(pos2.azimuth);
+    let diff = az2 - az1;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return diff;
+}
+
+function altitudeSpeedAcceleration(date) {
+    const speed1 = altitudeSpeedAtTime(date);
+    const speed2 = altitudeSpeedAtTime(new Date(date.getTime() + 1000));
+    return speed2 - speed1;
+}
+
+function updateMetrics() {
     const now = new Date();
     const pos = solarPosition(now);
     const pos2 = solarPosition(new Date(now.getTime() + 1000));
+    const targetAlt = pos.altitude;
+    const targetAz = pos.azimuth;
     const rate = (pos2.altitude - pos.altitude) * 3600;
-    const {events, maxInfo, dayStart, dayEnd} = buildEventCards(now);
+    const altSpeed = (pos2.altitude - pos.altitude);
+    const azSpeed = azimuthSpeedAtTime(now);
+    const rateAccel = altitudeSpeedAcceleration(now);
+    const cardinal = azimuthToCardinal(targetAz);
+
+    if (displayedAlt === null) {
+        displayedAlt = targetAlt;
+        displayedAz = targetAz;
+    } else {
+        displayedAlt += (targetAlt - displayedAlt) * 0.18;
+        const azDiff = shortestAngleDiff(displayedAz, targetAz);
+        displayedAz = normalizeAzimuth(displayedAz + azDiff * 0.18);
+    }
 
     document.getElementById('time').textContent = formatTime(now);
-    document.getElementById('alt').textContent = `${pos.altitude.toFixed(4)}°`;
-    document.getElementById('az').textContent = `${pos.azimuth.toFixed(4)}°`;
-    document.getElementById('rate').textContent = `${rate.toFixed(4)}°/hr`;
-    document.getElementById('maxAlt').textContent = maxInfo ? `${maxInfo.alt.toFixed(4)}°` : '--.--°';
-    document.getElementById('sunriseTime').textContent = formatShort(dayStart);
-    document.getElementById('sunsetTime').textContent = formatShort(dayEnd);
-    document.getElementById('sinceSunrise').textContent = dayStart && now >= dayStart ? formatCountdown(now - dayStart) : 'not yet risen';
+    document.getElementById('alt').textContent = `${displayedAlt.toFixed(4)}°`;
+    document.getElementById('az').textContent = `${displayedAz.toFixed(4)}°`;
+    document.getElementById('rate').textContent = `${rate.toFixed(5)}°/hr`;
+    
+    // Update alt text
+    document.getElementById('altAlt').textContent = `${altSpeed.toFixed(4)} °/s`;
+    document.getElementById('azAlt').textContent = `${cardinal} | ${(azSpeed * 3600).toFixed(4)} °/hr`;
+    document.getElementById('rateAlt').textContent = `${(rateAccel * 3600).toFixed(6)} °/hr²`;
+}
+
+function updateEvents() {
+    const now = new Date();
+    const {events, dayStart, dayEnd, prevSunset} = buildEventCards(now);
+
+    document.getElementById('sunriseTime').textContent = formatTime(dayStart);
+    document.getElementById('sunsetTime').textContent = formatTime(dayEnd);
+
+    let sinceSunriseText = 'not yet risen';
+    if (dayStart && now >= dayStart && dayEnd && now < dayEnd) {
+        sinceSunriseText = formatCountdown(now - dayStart);
+    } else if (prevSunset && now >= prevSunset) {
+        sinceSunriseText = formatCountdown(now - prevSunset);
+    }
+    document.getElementById('sinceSunrise').textContent = sinceSunriseText;
+
+    const nextEvent = events[0];
+    const nextCard = document.getElementById('nextEventCard');
+    nextCard.innerHTML = '';
+    if (nextEvent) {
+        nextCard.innerHTML = `
+            <div class="next-event-label">Next Event</div>
+            <div class="next-event-countdown">${formatCountdown(nextEvent.time - now)}</div>
+            <div class="next-event-value">${nextEvent.label}</div>
+            <div class="next-event-time">${formatTime(nextEvent.time)}</div>
+        `;
+    }
 
     const container = document.getElementById('eventList');
     container.innerHTML = '';
-    events.forEach((event) => {
+    events.slice(1).forEach((event) => {
         const card = document.createElement('div');
         card.className = 'event-card';
         const label = document.createElement('div');
@@ -464,7 +860,7 @@ function updateUI() {
         time.textContent = formatTime(event.time);
         const countdown = document.createElement('div');
         countdown.className = 'event-subtitle';
-        countdown.innerHTML = `<span>Countdown</span><span>${formatCountdown(event.time - now)}</span>`;
+        countdown.textContent = formatCountdown(event.time - now);
         card.appendChild(label);
         card.appendChild(time);
         card.appendChild(countdown);
@@ -472,8 +868,10 @@ function updateUI() {
     });
 }
 
-updateUI();
-setInterval(updateUI, 1000);
+updateMetrics();
+updateEvents();
+setInterval(updateMetrics, 100);
+setInterval(updateEvents, 1000);
 </script>
 
 </body>
