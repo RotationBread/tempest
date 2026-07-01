@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fast Start Adaptive Zoom Rolling Avg</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #0f0f0f;
+      color: #ddd;
+      font-family: Arial, sans-serif;
+    }
+
+    #chart {
+      width: 100vw;
+      height: 90vh;
+    }
+
+    #info {
+      height: 10vh;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      font-size: 14px;
+      background: #111;
+      border-top: 1px solid #222;
+    }
+  </style>
+</head>
+
+<body>
+<div id="chart"></div>
+
+<div id="info">
+  <div id="windowInfo"></div>
+  <div id="zoomInfo"></div>
+  <div id="etaInfo"></div>
+</div>
+
+<script>
+fetch("temp.csv")
+.then(r => r.text())
+.then(text => {
+
+  // ---------------- PARSE ----------------
+  const lines = text.trim().split("\n");
+
+  const t = [];
+  const y = [];
+
+  for (const line of lines) {
+    const [ts, temp] = line.split(",");
+    const x = parseFloat(ts);
+    const v = parseFloat(temp);
+    if (!isNaN(x) && !isNaN(v)) {
+      t.push(new Date(x * 1000));
+      y.push(v);
+    }
+  }
+
+  const n = y.length;
+
+  // ---------------- PREFIX SUM ----------------
+  const prefix = new Array(n);
+  prefix[0] = y[0];
+  for (let i = 1; i < n; i++) {
+    prefix[i] = prefix[i - 1] + y[i];
+  }
+
+  // ---------------- ROLLING AVG ----------------
+  function rolling(window) {
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const start = Math.max(0, i - window + 1);
+      const sum = prefix[i] - (start > 0 ? prefix[start - 1] : 0);
+      out[i] = sum / (i - start + 1);
+    }
+    return out;
+  }
+
+  // ---------------- WINDOW DECAY ----------------
+  const windows = [];
+  let w = n;
+
+  while (w > 1) {
+    windows.push(w);
+    w = Math.floor(w*0.999);
+  }
+  windows.push(1);
+
+  const totalFrames = windows.length;
+
+  // ---------------- VIEW LIMIT ----------------
+  const minView = 500;
+  const maxStart = Math.max(0, n - minView);
+
+  let startIndex = 0;
+
+  // ---------------- FAST START EASING ----------------
+  function easeFastStart(t) {
+    const k = 6; // aggressive early zoom
+    return 1 - Math.exp(-k * t);
+  }
+
+  // ---------------- INITIAL PLOT ----------------
+  const rawTrace = {
+    x: t,
+    y: y,
+    name: "Temperature",
+    mode: "lines",
+    line: { color: "#4da3ff", width: 1 }
+  };
+
+  const avgTrace = {
+    x: t,
+    y: rolling(windows[0]),
+    name: "Rolling Avg",
+    mode: "lines",
+    line: { color: "#ffcc00", width: 2 }
+  };
+
+  Plotly.newPlot("chart", [rawTrace, avgTrace], {
+    paper_bgcolor: "#0f0f0f",
+    plot_bgcolor: "#0f0f0f",
+    font: { color: "#ddd" },
+    margin: { t: 30 },
+    xaxis: { title: "Time" },
+    yaxis: { title: "Temperature (°F)" }
+  });
+
+  // ---------------- UI ----------------
+  const windowInfo = document.getElementById("windowInfo");
+  const zoomInfo = document.getElementById("zoomInfo");
+  const etaInfo = document.getElementById("etaInfo");
+
+  let step = 0;
+  const stepTimeMs = 100;
+
+  function update() {
+    if (step >= totalFrames) return;
+
+    const window = windows[step];
+
+    // ---------------- DATA ----------------
+    const visibleX = t.slice(startIndex);
+    const visibleY = y.slice(startIndex);
+
+    const fullAvg = rolling(window);
+    const avg = fullAvg.slice(startIndex);
+
+    const endIndex = startIndex + visibleX.length - 1;
+
+    // ---------------- ERROR (influence only) ----------------
+    let err = 0;
+    for (let i = 0; i < visibleY.length; i++) {
+      err += Math.abs(visibleY[i] - avg[i]);
+    }
+    err /= (visibleY.length || 1);
+
+    // ---------------- FAST START ZOOM TARGET ----------------
+    const tNorm = step / (totalFrames - 1);
+    const eased = easeFastStart(tNorm);
+
+    const targetStart = Math.floor(eased * maxStart);
+
+    // smoother + slightly more responsive early movement
+    startIndex += Math.floor((targetStart - startIndex) * 0.35);
+
+    if (startIndex > maxStart) startIndex = maxStart;
+
+    // ---------------- Y-AXIS FROM BLUE ONLY ----------------
+    let yMin = Infinity;
+    let yMax = -Infinity;
+
+    for (let i = 0; i < visibleY.length; i++) {
+      const v = visibleY[i];
+      if (v < yMin) yMin = v;
+      if (v > yMax) yMax = v;
+    }
+
+    const pad = (yMax - yMin) * 0.1 || 1;
+
+    // ---------------- UPDATE PLOTS ----------------
+    Plotly.restyle("chart", {
+      x: [visibleX],
+      y: [visibleY]
+    }, [0]);
+
+    Plotly.restyle("chart", {
+      x: [visibleX],
+      y: [avg]
+    }, [1]);
+
+    Plotly.relayout("chart", {
+      "xaxis.range": [t[startIndex], t[endIndex]],
+      "yaxis.range": [yMin - pad, yMax + pad]
+    });
+
+    // ---------------- UI ----------------
+    windowInfo.textContent = `Window: ${window}`;
+    zoomInfo.textContent = `Start: ${startIndex} / ${maxStart} | Error: ${err.toFixed(8)}`;
+
+    const remaining = totalFrames - step - 1;
+    etaInfo.textContent = `ETA: ~${Math.floor(remaining/60)}m ${remaining%60}s`;
+
+    step++;
+    setTimeout(update, stepTimeMs);
+  }
+
+  update();
+});
+</script>
+
+</body>
+</html>

@@ -297,74 +297,18 @@ body::before {
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.min.js"></script>
 <script>
-const rad = Math.PI / 180;
-const deg = 180 / Math.PI;
-const lat = 42.024 * rad;
+const lat = 42.024;
 const lon = -76.215;
 const refractionSunrise = -0.833;
 
-function normalizeDegrees(angle) {
-    return angle - 360 * Math.floor(angle / 360);
-}
-
 function solarPosition(date) {
-    const jd = date.getTime() / 86400000 + 2440587.5;
-    const jc = (jd - 2451545.0) / 36525;
-
-    const meanLon = normalizeDegrees(280.46646 + 36000.76983 * jc + 0.0003032 * jc * jc);
-    const meanAnom = normalizeDegrees(357.52911 + 35999.05029 * jc - 0.0001537 * jc * jc);
-    const ecc = 0.016708634 - 0.000042037 * jc - 0.0000001267 * jc * jc;
-
-    const meanAnomRad = meanAnom * rad;
-    const sunEqCenter =
-        (1.914602 - 0.004817 * jc - 0.000014 * jc * jc) * Math.sin(meanAnomRad) +
-        (0.019993 - 0.000101 * jc) * Math.sin(2 * meanAnomRad) +
-        0.000289 * Math.sin(3 * meanAnomRad);
-
-    const sunTrueLong = meanLon + sunEqCenter;
-    const omega = 125.04 - 1934.136 * jc;
-    const sunAppLong = sunTrueLong - 0.00569 - 0.00478 * Math.sin(omega * rad);
-
-    const meanObliq = 23.4392911111111 - 0.0130041666667 * jc - 0.0000001638889 * jc * jc + 0.0000005036111 * jc * jc * jc;
-    const obliqCorr = meanObliq + 0.00256 * Math.cos(omega * rad);
-
-    const declination = Math.asin(Math.sin(obliqCorr * rad) * Math.sin(sunAppLong * rad));
-
-    const y = Math.tan((obliqCorr * rad) / 2);
-    const eqTime = 4 * deg * (
-        y * Math.sin(2 * meanLon * rad) -
-        2 * ecc * Math.sin(meanAnomRad) +
-        4 * ecc * y * Math.sin(meanAnomRad) * Math.cos(2 * meanLon * rad) -
-        0.5 * y * y * Math.sin(4 * meanLon * rad) -
-        1.25 * ecc * ecc * Math.sin(2 * meanAnomRad)
-    );
-
-    const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60 + date.getUTCMilliseconds() / 60000;
-    let trueSolarTime = utcMinutes + eqTime + 4 * lon;
-    trueSolarTime = ((trueSolarTime % 1440) + 1440) % 1440;
-
-    const hourAngle = (trueSolarTime / 4 - 180) * rad;
-
-    const sinAlt = Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
-    const altitude = Math.asin(Math.min(Math.max(sinAlt, -1), 1));
-
-    const azRad = Math.atan2(
-        Math.sin(hourAngle),
-        Math.cos(hourAngle) * Math.sin(lat) - Math.tan(declination) * Math.cos(lat)
-    );
-    let azimuth = (azRad * deg + 180) % 360;
-    if (azimuth < 0) azimuth += 360;
-
-    const altDeg = altitude * deg;
-    const refraction = (altDeg > -0.575)
-        ? 0.00452 / Math.tan((altDeg + 10.3 / (altDeg + 5.11)) * rad)
-        : 0;
-    const apparentAltitude = altDeg + refraction;
-
+    const pos = SunCalc.getPosition(date, lat, lon);
+    const altitude = pos.altitude * (180 / Math.PI);
+    const azimuth = (pos.azimuth * (180 / Math.PI) + 180 + 360) % 360;
     return {
-        altitude: altDeg,
-        apparentAltitude,
+        altitude,
         azimuth
     };
 }
@@ -374,9 +318,9 @@ function refineCrossing(targetAlt, low, high) {
     let t2 = new Date(high);
     for (let i = 0; i < 25; i++) {
         const mid = new Date((t1.getTime() + t2.getTime()) / 2);
-        const alt = solarPosition(mid).apparentAltitude;
-        if ((solarPosition(t1).apparentAltitude < targetAlt && alt >= targetAlt) ||
-            (solarPosition(t1).apparentAltitude > targetAlt && alt <= targetAlt)) {
+        const alt = solarPosition(mid).altitude;
+        if ((solarPosition(t1).altitude < targetAlt && alt >= targetAlt) ||
+            (solarPosition(t1).altitude > targetAlt && alt <= targetAlt)) {
             t2 = mid;
         } else {
             t1 = mid;
@@ -388,10 +332,10 @@ function refineCrossing(targetAlt, low, high) {
 function findNextCrossing(targetAlt, fromDate, rising) {
     const step = 60000;
     let t = new Date(fromDate);
-    let prevAlt = solarPosition(t).apparentAltitude;
+    let prevAlt = solarPosition(t).altitude;
     for (let i = 0; i < 2880; i++) {
         t = new Date(t.getTime() + step);
-        const currAlt = solarPosition(t).apparentAltitude;
+        const currAlt = solarPosition(t).altitude;
         if ((rising && prevAlt < targetAlt && currAlt >= targetAlt) || (!rising && prevAlt > targetAlt && currAlt <= targetAlt)) {
             return refineCrossing(targetAlt, new Date(t.getTime() - step), t);
         }
@@ -403,10 +347,10 @@ function findNextCrossing(targetAlt, fromDate, rising) {
 function findPreviousCrossing(targetAlt, fromDate, rising) {
     const step = 60000;
     let t = new Date(fromDate);
-    let prevAlt = solarPosition(t).apparentAltitude;
+    let prevAlt = solarPosition(t).altitude;
     for (let i = 0; i < 2880; i++) {
         t = new Date(t.getTime() - step);
-        const currAlt = solarPosition(t).apparentAltitude;
+        const currAlt = solarPosition(t).altitude;
         if ((rising && prevAlt < targetAlt && currAlt >= targetAlt) || (!rising && prevAlt > targetAlt && currAlt <= targetAlt)) {
             return refineCrossing(targetAlt, t, new Date(t.getTime() + step));
         }
@@ -427,11 +371,11 @@ function findAllCrossings(targetAlt, startTime, endTime) {
     const crossings = [];
     let t = new Date(startTime);
     const step = 60000;
-    let prevAlt = solarPosition(t).apparentAltitude;
+    let prevAlt = solarPosition(t).altitude;
     let lastReportedTime = -1;
 
     while (t <= endTime) {
-        const currAlt = solarPosition(t).apparentAltitude;
+        const currAlt = solarPosition(t).altitude;
         if ((prevAlt < targetAlt && currAlt >= targetAlt) || (prevAlt > targetAlt && currAlt <= targetAlt)) {
             const crossing = refineCrossing(targetAlt, new Date(t.getTime() - step), t);
             if (Math.abs(crossing.getTime() - lastReportedTime) > 60000) {
@@ -441,7 +385,7 @@ function findAllCrossings(targetAlt, startTime, endTime) {
                 });
                 lastReportedTime = crossing.getTime();
                 t = new Date(crossing.getTime() + 60000);
-                prevAlt = solarPosition(t).apparentAltitude;
+                prevAlt = solarPosition(t).altitude;
                 continue;
             }
         }
@@ -453,23 +397,23 @@ function findAllCrossings(targetAlt, startTime, endTime) {
 
 function findMinAltitude(startTime, endTime) {
     if (!startTime || !endTime) return null;
-    let best = {time: new Date(startTime), alt: solarPosition(startTime).apparentAltitude};
+    let best = {time: new Date(startTime), alt: solarPosition(startTime).altitude};
     const step = 5 * 60000;
     for (let t = new Date(startTime.getTime()); t <= endTime; t = new Date(t.getTime() + step)) {
-        const alt = solarPosition(t).apparentAltitude;
+        const alt = solarPosition(t).altitude;
         if (alt < best.alt) best = {time: new Date(t), alt};
     }
     for (let offset = -600; offset <= 600; offset += 10) {
         const t = new Date(best.time.getTime() + offset * 1000);
         if (t < startTime || t > endTime) continue;
-        const alt = solarPosition(t).apparentAltitude;
+        const alt = solarPosition(t).altitude;
         if (alt < best.alt) best = {time: new Date(t), alt};
     }
     // Final refinement to 0.0001 degree precision
     for (let offset = -100; offset <= 100; offset += 1) {
         const t = new Date(best.time.getTime() + offset * 100);
         if (t < startTime || t > endTime) continue;
-        const alt = solarPosition(t).apparentAltitude;
+        const alt = solarPosition(t).altitude;
         if (alt < best.alt) best = {time: new Date(t), alt};
     }
     return best;
@@ -477,16 +421,16 @@ function findMinAltitude(startTime, endTime) {
 
 function findMaxAltitude(start, end) {
     if (!start || !end) return null;
-    let best = {time: new Date(start), alt: solarPosition(start).apparentAltitude};
+    let best = {time: new Date(start), alt: solarPosition(start).altitude};
     const step = 2 * 60000;
     for (let t = new Date(start.getTime()); t <= end; t = new Date(t.getTime() + step)) {
-        const alt = solarPosition(t).apparentAltitude;
+        const alt = solarPosition(t).altitude;
         if (alt > best.alt) best = {time: new Date(t), alt};
     }
     for (let offset = -180; offset <= 180; offset += 1) {
         const t = new Date(best.time.getTime() + offset * 1000);
         if (t < start || t > end) continue;
-        const alt = solarPosition(t).apparentAltitude;
+        const alt = solarPosition(t).altitude;
         if (alt > best.alt) best = {time: new Date(t), alt};
     }
     return best;
@@ -872,7 +816,13 @@ updateMetrics();
 updateEvents();
 setInterval(updateMetrics, 100);
 setInterval(updateEvents, 1000);
+
+
+
+
+
 </script>
+
 
 </body>
 </html>

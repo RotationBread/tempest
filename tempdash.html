@@ -315,38 +315,30 @@
             </select>
             <button id="apply-range" style="margin-left:4px;padding:6px 10px;font-weight:600;">Apply</button>
           </span>
-          <!-- forecast toggle & hour limit -->
-          <!-- forecast toggle -->
+          <!-- forecast toggle & mode selector -->
           <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
             <input type="checkbox" id="show-forecast" style="margin-right:4px;">
             Forecast
           </label>
-          <label style="color:var(--muted);font-weight:600;margin-left:8px; display:flex; align-items:center;">
-            <input type="checkbox" id="show-ensemble" style="margin-right:4px;">
-            Ensemble
-          </label>
-          <span id="ensemble-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
-            <input type="number" id="ensemble-hours" min="1" max="5200" value="24" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
-            h
+          <span id="forecast-mode-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
+            <label for="forecast-mode" style="margin-right:4px; font-weight:600;">Mode:</label>
+            <select id="forecast-mode" style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
+              <option value="regular" selected>Regular (Default)</option>
+              <option value="ensemble">Ensemble</option>
+            </select>
           </span>
-          <span id="ensemble-threshold-checkbox-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
-            <input type="checkbox" id="use-ensemble-threshold" style="margin-right:4px;">
-            Ensemble threshold
-          </span>
-          <span id="ensemble-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
-            <input type="number" id="ensemble-threshold" min="-100" max="150" value="32" step="0.1" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
-            °F
-          </span>
-          <!-- wrap hour limit so we can hide it when forecast is off -->
           <span id="forecast-hours-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
             <input type="number" id="forecast-hours" min="1" max="5200" value="12" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
             h
           </span>
-          <!-- forecast threshold toggle & degree input -->
-          <span id="forecast-threshold-checkbox-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
+          <span id="use-one-link-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
+            <input type="checkbox" id="use-one-link" style="margin-right:4px;">
+            Use 1 Link
+          </span>
+          <label id="use-forecast-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:8px; align-items:center;">
             <input type="checkbox" id="use-forecast-threshold" style="margin-right:4px;">
             Threshold
-          </span>
+          </label>
           <span id="forecast-threshold-wrapper" style="display:none; color:var(--muted);font-weight:600;margin-left:4px; align-items:center;">
             <input type="number" id="forecast-threshold" min="-100" max="150" value="32" step="0.1" style="width:60px;border-radius:8px;padding:4px 6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;" disabled>
             °F
@@ -762,6 +754,11 @@
     let lastEnsembleData = null;
     let lastEnsembleFetchTs = 0;
     let lastEnsembleUrl = null;
+    let lastEnsembleFetchTsMs = 0; // ms since epoch for 15-min refresh logic
+    let lastMainDeterministicData = null;
+    let lastMainDeterministicFetchTsMs = 0;
+    let lastSubhourlyData = null;
+    let lastSubhourlyFetchTsMs = 0;
 
     async function fetchForecastData() {
       // Open-Meteo request returning 15‑min resolution forecast (up to ~24h)
@@ -812,27 +809,99 @@
       return times.map((t, i) => ({ ts: Math.floor(new Date(t).getTime() / 1000), tempF: parseFloat(temps[i]) })).filter(p => Number.isFinite(p.tempF));
     }
 
+    async function fetchMainDeterministicData(requestedHours = 24) {
+      const now = Date.now();
+      const needsRefresh = !lastMainDeterministicData || now - lastMainDeterministicFetchTsMs > 15 * 60 * 1000;
+      
+      if (lastMainDeterministicData && !needsRefresh) {
+        return lastMainDeterministicData;
+      }
+      
+      try {
+        const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_ifs,ecmwf_ifs025,ecmwf_aifs025_single,cma_grapes_global,gfs_seamless,gfs_hrrr,ncep_nbm_conus,ncep_nam_conus,ncep_aigfs025,jma_seamless,metno_nordic,ukmo_global_deterministic_10km,icon_global,gem_global,meteofrance_arpege_world&forecast_days=16&temperature_unit=fahrenheit&timezone=America%2FNew_York";
+        const resp = await rateLimitedFetch(url);
+        if (!resp.ok) {
+          console.warn(`Main deterministic fetch failed (${resp.status})`);
+          return lastMainDeterministicData;
+        }
+        const j = await resp.json();
+        if (!j.hourly || !j.hourly.time) {WS
+          console.warn(`Main deterministic response missing hourly data`);
+          return lastMainDeterministicData;
+        }
+        lastMainDeterministicFetchTsMs = now;
+        lastMainDeterministicData = j;
+        return j;
+      } catch (err) {
+        console.warn(`Main deterministic fetch error:`, err);
+        return lastMainDeterministicData;
+      }
+    }
+
+    async function fetchSubhourlyData(requestedHours = 24) {
+      const now = Date.now();
+      const needsRefresh = !lastSubhourlyData || now - lastSubhourlyFetchTsMs > 15 * 60 * 1000;
+      
+      if (lastSubhourlyData && !needsRefresh) {
+        return lastSubhourlyData;
+      }
+      
+      try {
+        const url = "https://api.open-meteo.com/v1/forecast?latitude=42.02&longitude=-76.21&models=ecmwf_ifs,ecmwf_ifs025,ecmwf_aifs025_single,cma_grapes_global,gfs_seamless,gfs_hrrr,ncep_nbm_conus,ncep_nam_conus,ncep_aigfs025,jma_seamless,metno_nordic,ukmo_global_deterministic_10km,icon_global,gem_global,meteofrance_arpege_world&minutely_15=temperature_2m&forecast_days=1&temperature_unit=fahrenheit&forecast_minutely_15=96&timezone=America%2FNew_York";
+        const resp = await rateLimitedFetch(url);
+        if (!resp.ok) {
+          console.warn(`Subhourly fetch failed (${resp.status})`);
+          return lastSubhourlyData;
+        }
+        const j = await resp.json();
+        if (!j.minutely_15 || !j.minutely_15.time) {
+          console.warn(`Subhourly response missing minutely_15 data`);
+          return lastSubhourlyData;
+        }
+        lastSubhourlyFetchTsMs = now;
+        lastSubhourlyData = j;
+        return j;
+      } catch (err) {
+        console.warn(`Subhourly fetch error:`, err);
+        return lastSubhourlyData;
+      }
+    }
+
     async function fetchEnsembleData(requestedHours = 24) {
+      const now = Date.now();
+      // Refresh every 15 minutes (900000 ms)
+      const needsRefresh = !lastEnsembleData || now - lastEnsembleFetchTsMs > 15 * 60 * 1000;
+      
       const useSeasonal = requestedHours > 840;
       const url = useSeasonal
-        ? "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&daily=temperature_2m_max&hourly=temperature_2m&models=ecmwf_seasonal_seamless&temporal_resolution=hourly_1&forecast_days=217&temperature_unit=fahrenheit"
-        : "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_gefs_seamless&forecast_days=36&temperature_unit=fahrenheit";
-      const now = Date.now();
-      if (lastEnsembleData && lastEnsembleUrl === url && now - lastEnsembleFetchTs < 15 * 60 * 1000) {
+        ? "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ecmwf_seasonal_seamless&temporal_resolution=hourly_1&forecast_days=217&temperature_unit=fahrenheit&timezone=America%2FNew_York"
+        : "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_gefs_seamless,ncep_aigefs025,ecmwf_ifs025_ensemble,ecmwf_aifs025_ensemble,gem_global_ensemble,bom_access_global_ensemble,ukmo_global_ensemble_20km,icon_global_eps&forecast_days=36&temperature_unit=fahrenheit&timezone=America%2FNew_York";
+      
+      // Return cached data if not expired
+      if (lastEnsembleData && lastEnsembleUrl === url && !needsRefresh) {
         return lastEnsembleData;
       }
-      const resp = await rateLimitedFetch(url);
-      if (!resp.ok) {
+      
+      try {
+        const resp = await rateLimitedFetch(url);
+        if (!resp.ok) {
+          console.warn(`Ensemble fetch failed (${resp.status}), returning cached data`);
+          return lastEnsembleData;
+        }
+        const j = await resp.json();
+        if (!j.hourly || !j.hourly.time) {
+          console.warn(`Ensemble response missing hourly data`);
+          return lastEnsembleData;
+        }
+        lastEnsembleFetchTsMs = now;
+        lastEnsembleFetchTs = now;
+        lastEnsembleUrl = url;
+        lastEnsembleData = j;
+        return j;
+      } catch (err) {
+        console.warn(`Ensemble fetch error:`, err);
         return lastEnsembleData;
       }
-      const j = await resp.json();
-      if (!j.hourly || !j.hourly.time) {
-        return lastEnsembleData;
-      }
-      lastEnsembleFetchTs = now;
-      lastEnsembleUrl = url;
-      lastEnsembleData = j;
-      return j;
     }
 
     async function fetchAllForecasts() {
@@ -1149,7 +1218,8 @@
       const segColors = pointColors;
 
       const traceSpans = [];
-      if (segTimes.length > 1) {
+      const useExactLine = timeRangeSeconds <= 259200;
+      if (!useExactLine && segTimes.length > 1) {
         let spanStart = 0;
         let spanEnd = 1;
         let currentConstant = segColors[1] === segColors[0];
@@ -1194,37 +1264,58 @@
 
       // build traces: one line segment per interval on the (possibly) reduced arrays
       const traces = [];
-      for (const span of traceSpans) {
-        const start = span.start;
-        const end = span.end;
-        const currentPoint = sampledData[start];
-        const nextPoint = sampledData[end];
-        const hoverTexts = disableHover ? undefined : [
-          buildHoverText(currentPoint.tempF, currentPoint.rh, currentPoint.windMph, computeFeelsLike(currentPoint.tempF, currentPoint.rh, currentPoint.windMph), calculateDewpoint(currentPoint.tempF, currentPoint.rh), currentPoint.solarRadiation, currentPoint.ts),
-          buildHoverText(nextPoint.tempF, nextPoint.rh, nextPoint.windMph, computeFeelsLike(nextPoint.tempF, nextPoint.rh, nextPoint.windMph), calculateDewpoint(nextPoint.tempF, nextPoint.rh), nextPoint.solarRadiation, nextPoint.ts)
-        ];
-
+      if (useExactLine && segTimes.length > 1) {
         const trace = {
-          x: [segTimes[start], segTimes[end]],
-          y: [segTemps[start], segTemps[end]],
+          x: segTimes,
+          y: segTemps,
           type: traceType,
           mode: 'lines',
-          line: { color: segColors[start], width: 4 },
+          line: { color: segColors[0], width: 4 },
           hoverinfo: lineHoverInfo,
           showlegend: false
         };
         if (!disableHover) {
-          trace.text = hoverTexts;
+          trace.text = sampledData.map(d => buildHoverText(d.tempF, d.rh, d.windMph, computeFeelsLike(d.tempF, d.rh, d.windMph), calculateDewpoint(d.tempF, d.rh), d.solarRadiation, d.ts));
           trace.hovertemplate = lineHoverTemplate;
         }
         traces.push(trace);
+      } else {
+        for (const span of traceSpans) {
+          const start = span.start;
+          const end = span.end;
+          const currentPoint = sampledData[start];
+          const nextPoint = sampledData[end];
+          const hoverTexts = disableHover ? undefined : [
+            buildHoverText(currentPoint.tempF, currentPoint.rh, currentPoint.windMph, computeFeelsLike(currentPoint.tempF, currentPoint.rh, currentPoint.windMph), calculateDewpoint(currentPoint.tempF, currentPoint.rh), currentPoint.solarRadiation, currentPoint.ts),
+            buildHoverText(nextPoint.tempF, nextPoint.rh, nextPoint.windMph, computeFeelsLike(nextPoint.tempF, nextPoint.rh, nextPoint.windMph), calculateDewpoint(nextPoint.tempF, nextPoint.rh), nextPoint.solarRadiation, nextPoint.ts)
+          ];
+
+          const trace = {
+            x: [segTimes[start], segTimes[end]],
+            y: [segTemps[start], segTemps[end]],
+            type: traceType,
+            mode: 'lines',
+            line: { color: segColors[start], width: 4 },
+            hoverinfo: lineHoverInfo,
+            showlegend: false
+          };
+          if (!disableHover) {
+            trace.text = hoverTexts;
+            trace.hovertemplate = lineHoverTemplate;
+          }
+          traces.push(trace);
+        }
       }
 
-      // add feels-like line for observed values only (add it first so it's behind temp line)
+      // Observation traces will be added at the end, after all forecasts, so they appear on top
+      // Store observation data for later
+      const obsTracesToAdd = [];
+      
+      // add feels-like line for observed values
       const feelsLikeTemps = sampledData.map(d => computeFeelsLike(d.tempF, d.rh, d.windMph));
       const feelsLikeColor = hideMarkers ? 'rgb(40, 0, 0)' : 'red'; // very dark red for >72hr ranges
       
-      traces.unshift({
+      obsTracesToAdd.push({
         x: times,
         y: feelsLikeTemps,
         type: traceType,
@@ -1254,37 +1345,183 @@
           markerTrace.text = markerHoverText;
           markerTrace.hovertemplate = '%{text}<extra></extra>';
         }
-        traces.push(markerTrace);
+        obsTracesToAdd.push(markerTrace);
       }
 
       // optionally add forecast or ensemble lines if requested
       const showForecast = document.getElementById('show-forecast')?.checked;
-      const showEnsemble = document.getElementById('show-ensemble')?.checked;
+      const forecastMode = document.getElementById('forecast-mode')?.value || 'regular';
+      const showEnsemble = showForecast && forecastMode === 'ensemble';
+      const useOneLink = document.getElementById('use-one-link')?.checked;
       const lastObs = data[data.length - 1];
+      const forecastLines = [];
       if (showEnsemble) {
-        const ensembleHours = parseInt(document.getElementById('ensemble-hours')?.value) || 24;
-        const ensemblePayload = await fetchEnsembleData(ensembleHours);
+        const ensembleHours = parseInt(document.getElementById('forecast-hours')?.value) || 24;
+        
+        // Determine which API to use based on time frame if "Use 1 Link" is enabled
+        const selectApiByTimeframe = (hours) => {
+          if (hours < 24) return 'subhourly';
+          if (hours < 16 * 24) return 'main';      // 16 days
+          if (hours < 35 * 24) return 'ensemble';  // 35 days
+          return 'seasonal';
+        };
+        
+        let mainPayload = null, subhourlyPayload = null, ensemblePayload = null, seasonalPayload = null;
+        
+        if (useOneLink) {
+          // Use only one API based on requested hours
+          const selectedApi = selectApiByTimeframe(ensembleHours);
+          if (selectedApi === 'subhourly') {
+            subhourlyPayload = await fetchSubhourlyData(ensembleHours);
+          } else if (selectedApi === 'main') {
+            mainPayload = await fetchMainDeterministicData(ensembleHours);
+          } else if (selectedApi === 'ensemble') {
+            ensemblePayload = await fetchEnsembleData(ensembleHours);
+          } else if (selectedApi === 'seasonal') {
+            ensemblePayload = await fetchEnsembleData(ensembleHours);
+          }
+        } else {
+          // Fetch all 4 data sources
+          [mainPayload, subhourlyPayload, ensemblePayload, seasonalPayload] = await Promise.all([
+            fetchMainDeterministicData(ensembleHours),
+            fetchSubhourlyData(ensembleHours),
+            fetchEnsembleData(ensembleHours),
+            ensembleHours > 840 ? fetchEnsembleData(ensembleHours) : Promise.resolve(null) // seasonal fallback
+          ]);
+        }
+        
+        // Helper to process and add traces from a model forecast
+        const addModelTraces = (payload, label, modelKey, color, opacity = 0.3) => {
+          if (!payload || !payload.hourly && !payload.minutely_15) return;
+          
+          const isMinutely = !!payload.minutely_15;
+          const timeData = isMinutely ? payload.minutely_15.time : payload.hourly.time;
+          const tempData = isMinutely ? payload.minutely_15[modelKey] : payload.hourly[modelKey];
+          
+          if (!timeData || !tempData) return;
+          
+          const times = timeData.map(t => Math.floor(new Date(t).getTime() / 1000));
+          const temps = tempData.map(v => parseFloat(v));
+          
+          // Find latest forecast time that is <= latest observation time
+          const latestObsTs = lastObs.ts;
+          let startIdx = -1;
+          for (let i = times.length - 1; i >= 0; i--) {
+            if (times[i] <= latestObsTs) {
+              startIdx = i;
+              break;
+            }
+          }
+          if (startIdx < 0) return;
+          
+          // Find the observation that matches this forecast time
+          const forecastStartTs = times[startIdx];
+          const matchingObs = data.find(d => d.ts === forecastStartTs) 
+            || data.slice().reverse().find(d => d.ts <= forecastStartTs);
+          const obsAtForecastStart = matchingObs ? matchingObs.tempF : lastObs.tempF;
+          
+          // Find end based on requested hours
+          const endTs = times[startIdx] + ensembleHours * 3600;
+          const endIdx = times.findIndex((ts, idx) => idx > startIdx && ts > endTs);
+          const finalIdx = endIdx === -1 ? times.length : endIdx;
+          
+          const slicedTimes = times.slice(startIdx, finalIdx);
+          const slicedTemps = temps.slice(startIdx, finalIdx);
+          
+          // Check if we have valid data for the full range
+          const validCount = slicedTemps.filter(v => Number.isFinite(v)).length;
+          if (validCount === 0 || slicedTimes.length < 2) return;
+          
+          // Align to the observation at forecast start time
+          const firstTemp = slicedTemps[0];
+          const offset = Number.isFinite(firstTemp) ? obsAtForecastStart - firstTemp : 0;
+          const adjustedTemps = slicedTemps.map(v => Number.isFinite(v) ? v + offset : v);
+          
+          const lineTimes = slicedTimes.map(ts => new Date(ts * 1000));
+          
+          forecastLines.push({
+            trace: {
+              x: lineTimes,
+              y: adjustedTemps,
+              type: traceType,
+              mode: 'lines',
+              line: { color: `rgba(${color.r}, ${color.g}, ${color.b}, 1)`, width: 1.5, dash: 'dot' },
+              hovertemplate: `%{x|%b %d %I:%M %p}<br>${label}: %{y:.1f}°F<extra></extra>`,
+              hoverinfo: 'text',
+              hoverlabel: { bgcolor: 'rgba(20,20,20,0.95)', font: { size: 11, color: '#fff' } },
+              showlegend: false
+            },
+            isMean: false
+          });
+        };
+        
+        // Add main deterministic models (each model is faint)
+        if (mainPayload && mainPayload.hourly) {
+          const mainModels = Object.keys(mainPayload.hourly).filter(k => k.startsWith('temperature_2m_'));
+          mainModels.forEach((key, idx) => {
+            const modelLabel = key.replace('temperature_2m_', '').toUpperCase();
+            addModelTraces(mainPayload, `Main-${modelLabel}`, key, { r: 100, g: 150, b: 200 }, 0.2);
+          });
+        }
+        
+        // Add subhourly deterministic models (each model is faint, slightly different color)
+        if (subhourlyPayload && subhourlyPayload.minutely_15) {
+          const subhourlyModels = Object.keys(subhourlyPayload.minutely_15).filter(k => k.startsWith('temperature_2m_'));
+          subhourlyModels.forEach((key, idx) => {
+            const modelLabel = key.replace('temperature_2m_', '').toUpperCase();
+            addModelTraces(subhourlyPayload, `Subhourly-${modelLabel}`, key, { r: 150, g: 180, b: 220 }, 0.2);
+          });
+        }
+        
+        // Add ensemble members
         if (ensemblePayload && ensemblePayload.hourly && ensemblePayload.hourly.time) {
           const ensembleTimesRaw = ensemblePayload.hourly.time.map(t => Math.floor(new Date(t).getTime() / 1000));
           const memberKeys = Object.keys(ensemblePayload.hourly).filter(k => k.startsWith('temperature_2m_member')).sort();
-          const ensembleStartTs = Math.floor(lastObs.ts / 3600) * 3600;
-          const startIndex = ensembleTimesRaw.findIndex(ts => ts >= ensembleStartTs);
+          
+          // Find latest forecast time that is <= latest observation time
+          const latestObsTs = lastObs.ts;
+          let startIndex = -1;
+          for (let i = ensembleTimesRaw.length - 1; i >= 0; i--) {
+            if (ensembleTimesRaw[i] <= latestObsTs) {
+              startIndex = i;
+              break;
+            }
+          }
+          
           if (startIndex >= 0) {
-            const trimmedTimes = ensembleTimesRaw.slice(startIndex).map(ts => new Date(ts * 1000));
-            const memberValues = memberKeys.map(key => ensemblePayload.hourly[key].slice(startIndex).map(v => parseFloat(v)));
-            const ensembleEndTs = Math.floor(trimmedTimes[0].getTime() / 1000) + ensembleHours * 3600;
-            const limitIndex = trimmedTimes.findIndex(dt => Math.floor(dt.getTime() / 1000) > ensembleEndTs);
-            const finalTimes = limitIndex === -1 ? trimmedTimes : trimmedTimes.slice(0, limitIndex);
-            const finalMemberValues = limitIndex === -1 ? memberValues : memberValues.map(values => values.slice(0, limitIndex));
-            const obsAtStart = data.find(d => d.ts === Math.floor(finalTimes[0].getTime() / 1000))
-              || data.slice().reverse().find(d => d.ts <= Math.floor(finalTimes[0].getTime() / 1000));
-            const baseObsTemp = obsAtStart ? obsAtStart.tempF : lastObs.tempF;
-            const adjustedMemberValues = finalMemberValues.map(values => {
+            const ensembleEndTs = ensembleTimesRaw[startIndex] + ensembleHours * 3600;
+            const limitIndex = ensembleTimesRaw.findIndex((ts, idx) => idx > startIndex && ts > ensembleEndTs);
+            const endIndex = limitIndex === -1 ? ensembleTimesRaw.length : limitIndex;
+            
+            const trimmedTimes = ensembleTimesRaw.slice(startIndex, endIndex).map(ts => new Date(ts * 1000));
+            const memberValues = memberKeys.map(key => ensemblePayload.hourly[key].slice(startIndex, endIndex).map(v => parseFloat(v)));
+            
+            // Find the observation that matches this forecast time
+            const forecastStartTs = ensembleTimesRaw[startIndex];
+            const matchingObs = data.find(d => d.ts === forecastStartTs) 
+              || data.slice().reverse().find(d => d.ts <= forecastStartTs);
+            const obsAtForecastStart = matchingObs ? matchingObs.tempF : lastObs.tempF;
+            
+            // Filter members: only include if forecast reaches the requested time
+            const validMembers = [];
+            const validMemberKeys = [];
+            memberValues.forEach((values, idx) => {
+              const hasFullLength = values.length === trimmedTimes.length;
+              const hasValidData = values.filter(v => Number.isFinite(v)).length === values.length;
+              if (hasFullLength && hasValidData) {
+                validMembers.push(values);
+                validMemberKeys.push(memberKeys[idx]);
+              }
+            });
+            
+            // Adjust all valid members relative to observation at forecast start time
+            const adjustedMemberValues = validMembers.map(values => {
               const firstForecastTemp = values[0];
-              const offset = Number.isFinite(firstForecastTemp) ? baseObsTemp - firstForecastTemp : 0;
+              const offset = Number.isFinite(firstForecastTemp) ? obsAtForecastStart - firstForecastTemp : 0;
               return values.map(v => Number.isFinite(v) ? v + offset : v);
             });
-            const adjustedMeanValues = finalTimes.map((_, idx) => {
+            
+            const adjustedMeanValues = trimmedTimes.map((_, idx) => {
               let sum = 0;
               let count = 0;
               for (const values of adjustedMemberValues) {
@@ -1296,9 +1533,10 @@
               }
               return count ? sum / count : NaN;
             });
-            const useEnsembleThreshold = document.getElementById('use-ensemble-threshold')?.checked;
-            if (useEnsembleThreshold) {
-              const threshold = parseFloat(document.getElementById('ensemble-threshold')?.value) || 32;
+            
+            const useThreshold = document.getElementById('use-forecast-threshold')?.checked;
+            if (useThreshold) {
+              const threshold = parseFloat(document.getElementById('forecast-threshold')?.value) || 32;
               let thresholdIndex = adjustedMeanValues.length;
               const startMean = adjustedMeanValues[0];
               for (let i = 0; i < adjustedMeanValues.length; i++) {
@@ -1314,38 +1552,49 @@
                 }
               }
               if (thresholdIndex < adjustedMeanValues.length) {
-                finalTimes.splice(thresholdIndex);
+                trimmedTimes.splice(thresholdIndex);
                 adjustedMemberValues.forEach(values => values.splice(thresholdIndex));
                 adjustedMeanValues.splice(thresholdIndex);
                 thresholdValue = threshold;
                 ensembleThresholdActive = true;
-                thresholdReachTime = new Date(finalTimes[finalTimes.length - 1]).toLocaleString();
+                thresholdReachTime = new Date(trimmedTimes[trimmedTimes.length - 1]).toLocaleString();
               }
             }
+            
+            // Add ensemble member lines with 0.2 opacity (very faint)
             adjustedMemberValues.forEach((values, idx) => {
-              const memberKey = memberKeys[idx];
-              traces.push({
-                x: finalTimes,
-                y: values,
-                type: traceType,
-                mode: 'lines',
-                line: { color: 'grey', width: 2, dash: 'dash' },
-                hovertemplate: '%{x|%b %d %I:%M %p}<br>' + memberKey + ': %{y:.1f}°F<extra></extra>',
-                hoverinfo: 'text',
-                hoverlabel: { bgcolor: 'rgba(20,20,20,0.95)', font: { size: 11, color: '#fff' } },
-                showlegend: false
+              const memberKey = validMemberKeys[idx];
+              forecastLines.push({
+                trace: {
+                  x: trimmedTimes,
+                  y: values,
+                  type: traceType,
+                  mode: 'lines',
+                  line: { color: 'rgba(150, 150, 150, 1)', width: 1.5, dash: 'dot' },
+                  hovertemplate: '%{x|%b %d %I:%M %p}<br>' + memberKey + ': %{y:.1f}°F<extra></extra>',
+                  hoverinfo: 'text',
+                  hoverlabel: { bgcolor: 'rgba(20,20,20,0.95)', font: { size: 11, color: '#fff' } },
+                  showlegend: false
+                },
+                isMean: false
               });
             });
-            traces.push({
-              x: finalTimes,
-              y: adjustedMeanValues,
-              type: traceType,
-              mode: 'lines',
-              line: { color: '#f0f0f0', width: 5, dash: 'dash' },
-              hovertemplate: '%{x|%b %d %I:%M %p}<br>Ensemble Mean: %{y:.1f}°F<extra></extra>',
-              hoverinfo: 'text',
-              hoverlabel: { bgcolor: '#111', font: { size: 14, color: '#fff' } },
-              showlegend: false
+            
+            // Add ensemble mean line (thicker, more visible)
+            forecastLines.push({
+              trace: {
+                x: trimmedTimes,
+                y: adjustedMeanValues,
+                type: traceType,
+                mode: 'lines',
+                line: { color: 'rgba(240, 240, 240, 1)', width: 3, dash: 'dash' },
+                hovertemplate: '%{x|%b %d %I:%M %p}<br>Ensemble Mean: %{y:.1f}°F<extra></extra>',
+                hoverinfo: 'text',
+                hoverlabel: { bgcolor: '#111', font: { size: 14, color: '#fff' } },
+                showlegend: false,
+                opacity: 0.8
+              },
+              isMean: true
             });
           }
         }
@@ -1355,7 +1604,7 @@
         thresholdReachTime = null;
         thresholdValue = null;
       }
-      if (showForecast) {
+      if (showForecast && forecastMode === 'regular') {
         const now = new Date();
         const nowMs = now.getTime();
         const minute = now.getMinutes();
@@ -1609,18 +1858,126 @@
 
           const fcTimes = limited.map(d => new Date(d.ts * 1000));
           const fcTemps = limited.map(d => d.tempF);
-          traces.push({
-            x: fcTimes,
-            y: fcTemps,
-            type: 'scattergl',
-            mode: 'lines',
-            line: { color: 'grey', width: 2, dash: 'dash' },
-            name: 'Forecast',
-            hovertemplate: '%{x|%b %d %I:%M %p}<br>Forecast: %{y:.1f}°F<extra></extra>',
-            hoverinfo: 'text'
+          forecastLines.push({
+            trace: {
+              x: fcTimes,
+              y: fcTemps,
+              type: 'scattergl',
+              mode: 'lines',
+              line: { color: 'rgba(128, 128, 128, 1)', width: 2, dash: 'dash' },
+              name: 'Forecast',
+              hovertemplate: '%{x|%b %d %I:%M %p}<br>Forecast: %{y:.1f}°F<extra></extra>',
+              hoverinfo: 'text'
+            },
+            isMean: false
           });
         }
       }
+
+      if (forecastLines.length) {
+        if (!forecastLines.some(f => f.isMean)) {
+          const nonMeanLines = forecastLines.filter(f => !f.isMean).map(f => f.trace);
+          const getTs = x => x instanceof Date ? x.getTime() : (typeof x === 'string' ? new Date(x).getTime() : x);
+          const timeMap = new Map();
+          nonMeanLines.forEach(trace => {
+            trace.x.forEach((x, i) => {
+              const ts = getTs(x);
+              const y = trace.y[i];
+              if (!Number.isFinite(y)) return;
+              const entry = timeMap.get(ts) || { sum: 0, count: 0 };
+              entry.sum += y;
+              entry.count += 1;
+              timeMap.set(ts, entry);
+            });
+          });
+
+          const meanTimes = Array.from(timeMap.keys()).sort((a, b) => a - b);
+          if (meanTimes.length > 0) {
+            const meanY = meanTimes.map(ts => {
+              const entry = timeMap.get(ts);
+              return entry.count ? entry.sum / entry.count : NaN;
+            });
+            const base = nonMeanLines[0] || {};
+            forecastLines.push({
+              trace: {
+                x: meanTimes.map(ts => new Date(ts)),
+                y: meanY,
+                type: base.type || traceType,
+                mode: 'lines',
+                line: { color: 'rgba(240, 240, 240, 1)', width: 3, dash: 'dash' },
+                hovertemplate: '%{x|%b %d %I:%M %p}<br>Ensemble Mean: %{y:.1f}°F<extra></extra>',
+                hoverinfo: 'text',
+                hoverlabel: { bgcolor: '#111', font: { size: 14, color: '#fff' } },
+                showlegend: false,
+                opacity: 0.8
+              },
+              isMean: true
+            });
+          }
+        }
+
+        const nonMeanLines = forecastLines.filter(f => !f.isMean);
+        const nonMeanOpacity = nonMeanLines.length > 0
+          ? Math.min(0.8, Math.max(0.1, 10 / nonMeanLines.length))
+          : 0.8;
+
+        forecastLines.forEach(f => {
+          if (f.isMean) {
+            f.trace.opacity = 0.8;
+          } else {
+            f.trace.opacity = nonMeanOpacity;
+          }
+          traces.push(f.trace);
+        });
+      }
+
+      // Add observation traces last so they appear on top of forecasts
+      // First add the main observation line
+      if (useExactLine && segTimes.length > 1) {
+        const trace = {
+          x: segTimes,
+          y: segTemps,
+          type: traceType,
+          mode: 'lines',
+          line: { color: segColors[0], width: 4 },
+          hoverinfo: lineHoverInfo,
+          showlegend: false
+        };
+        if (!disableHover) {
+          trace.text = sampledData.map(d => buildHoverText(d.tempF, d.rh, d.windMph, computeFeelsLike(d.tempF, d.rh, d.windMph), calculateDewpoint(d.tempF, d.rh), d.solarRadiation, d.ts));
+          trace.hovertemplate = lineHoverTemplate;
+        }
+        traces.push(trace);
+      } else {
+        for (const span of traceSpans) {
+          const start = span.start;
+          const end = span.end;
+          const currentPoint = sampledData[start];
+          const nextPoint = sampledData[end];
+          const hoverTexts = disableHover ? undefined : [
+            buildHoverText(currentPoint.tempF, currentPoint.rh, currentPoint.windMph, computeFeelsLike(currentPoint.tempF, currentPoint.rh, currentPoint.windMph), calculateDewpoint(currentPoint.tempF, currentPoint.rh), currentPoint.solarRadiation, currentPoint.ts),
+            buildHoverText(nextPoint.tempF, nextPoint.rh, nextPoint.windMph, computeFeelsLike(nextPoint.tempF, nextPoint.rh, nextPoint.windMph), calculateDewpoint(nextPoint.tempF, nextPoint.rh), nextPoint.solarRadiation, nextPoint.ts)
+          ];
+
+          const trace = {
+            x: [segTimes[start], segTimes[end]],
+            y: [segTemps[start], segTemps[end]],
+            type: traceType,
+            mode: 'lines',
+            line: { color: segColors[start], width: 4 },
+            hoverinfo: lineHoverInfo,
+            showlegend: false
+          };
+          if (!disableHover) {
+            trace.text = hoverTexts;
+            trace.hovertemplate = lineHoverTemplate;
+          }
+          traces.push(trace);
+        }
+      }
+
+      // Now add the stored observation traces (feels-like and markers)
+      obsTracesToAdd.forEach(trace => traces.push(trace));
 
       Plotly.react('temp-graph', traces, {
         margin: { t: 30, r: 30, l: 50, b: 50 },
@@ -1688,9 +2045,7 @@
     updateDashboard();
     // set initial visibility for controls
     updateForecastControls();
-    updateThresholdControls();
     updateSyncControls();
-    updateEnsembleControls();
     updateRangeFieldsVisibility();
 
     function deltaColor() {
@@ -1704,44 +2059,45 @@
     // manage visibility of forecast-related controls
     function updateForecastControls() {
       const showFc = document.getElementById('show-forecast').checked;
-      const forecastHours = parseInt(document.getElementById('forecast-hours')?.value) || 12;
-      document.getElementById('forecast-hours-wrapper').style.display = showFc ? 'flex' : 'none';
-      document.getElementById('forecast-threshold-checkbox-wrapper').style.display = showFc ? 'flex' : 'none';
-      document.getElementById('sync-obs-forecast-wrapper').style.display = showFc ? 'flex' : 'none';
-      // Hide/show offset rows based on forecast
-      const offsetRows = ['hrrr-offset-row', 'nbm-offset-row', 'gfs-offset-row', 'seasonal-offset-row'];
-      if (!showFc) {
-        offsetRows.forEach(id => document.getElementById(id).style.display = 'none');
-      } else {
-        // HRRR is used for any forecast
-        document.getElementById('hrrr-offset-row').style.display = 'block';
-        // NBM after 24hr
-        document.getElementById('nbm-offset-row').style.display = forecastHours > 24 ? 'block' : 'none';
-        // GFS after 7 days (168hr)
-        document.getElementById('gfs-offset-row').style.display = forecastHours > 168 ? 'block' : 'none';
-        // Seasonal after 30 days (720hr)
-        document.getElementById('seasonal-offset-row').style.display = forecastHours > 720 ? 'block' : 'none';
-      }
-      // threshold value visibility also depends on threshold checkbox
-      updateThresholdControls();
-      updateSyncControls();
-    }
+      const forecastMode = document.getElementById('forecast-mode')?.value || 'regular';
+      const useThresh = document.getElementById('use-forecast-threshold').checked;
 
-    function updateEnsembleControls() {
-      const showEnsemble = document.getElementById('show-ensemble').checked;
-      const useThresh = document.getElementById('use-ensemble-threshold').checked;
-      document.getElementById('ensemble-hours-wrapper').style.display = showEnsemble && !useThresh ? 'flex' : 'none';
-      document.getElementById('ensemble-threshold-checkbox-wrapper').style.display = showEnsemble ? 'flex' : 'none';
-      document.getElementById('ensemble-threshold-wrapper').style.display = showEnsemble && useThresh ? 'flex' : 'none';
-      document.getElementById('ensemble-threshold').disabled = !useThresh;
+      document.getElementById('forecast-mode-wrapper').style.display = showFc ? 'flex' : 'none';
+      document.getElementById('use-forecast-threshold-wrapper').style.display = showFc ? 'flex' : 'none';
+      document.getElementById('sync-obs-forecast-wrapper').style.display = showFc ? 'flex' : 'none';
+
+      if (!showFc) {
+        document.getElementById('forecast-hours-wrapper').style.display = 'none';
+        document.getElementById('use-one-link-wrapper').style.display = 'none';
+        document.getElementById('forecast-threshold-wrapper').style.display = 'none';
+        return;
+      }
+
+      if (forecastMode === 'ensemble') {
+        document.getElementById('forecast-hours-wrapper').style.display = 'flex';
+        document.getElementById('use-one-link-wrapper').style.display = 'flex';
+      } else {
+        document.getElementById('use-one-link-wrapper').style.display = 'none';
+        document.getElementById('forecast-hours-wrapper').style.display = useThresh ? 'none' : 'flex';
+      }
+
+      document.getElementById('forecast-threshold-wrapper').style.display = useThresh ? 'flex' : 'none';
+      document.getElementById('forecast-threshold').disabled = !useThresh;
+      updateSyncControls();
     }
 
     // show/hide threshold number input based on checkbox and forecast visibility
     function updateThresholdControls() {
       const useThresh = document.getElementById('use-forecast-threshold').checked;
       const showFc = document.getElementById('show-forecast').checked;
-      // Hide forecast-hours when threshold is on
-      document.getElementById('forecast-hours-wrapper').style.display = (showFc && !useThresh) ? 'flex' : 'none';
+      const forecastMode = document.getElementById('forecast-mode')?.value || 'regular';
+
+      if (!showFc) {
+        document.getElementById('forecast-hours-wrapper').style.display = 'none';
+      } else if (forecastMode === 'regular') {
+        document.getElementById('forecast-hours-wrapper').style.display = useThresh ? 'none' : 'flex';
+      }
+
       document.getElementById('forecast-threshold-wrapper').style.display = (useThresh && showFc) ? 'flex' : 'none';
       document.getElementById('forecast-threshold').disabled = !useThresh;
       updateSyncControls();
@@ -1751,29 +2107,13 @@
     function updateSyncControls() {
       const sync = document.getElementById('sync-obs-forecast').checked;
       const showFc = document.getElementById('show-forecast').checked;
-      const useThresh = document.getElementById('use-forecast-threshold').checked;
 
       if (!showFc || !sync) {
-        // show graph-range input when sync is off or forecast is disabled
         document.getElementById('graph-range-wrapper').style.display = 'flex';
-        // if forecast is off, forecast inputs are hidden by forecast controls
         return;
       }
 
-      if (useThresh) {
-        // threshold sync hides graph range controls and forecast hours
-        document.getElementById('graph-range-wrapper').style.display = 'none';
-        document.getElementById('forecast-hours-wrapper').style.display = 'none';
-      } else {
-        // non-threshold sync uses forecast hours as obs range
-        document.getElementById('graph-range-wrapper').style.display = 'flex';
-        document.getElementById('forecast-hours-wrapper').style.display = 'none';
-
-        const forecastHoursValue = parseInt(document.getElementById('forecast-hours')?.value) || 12;
-        document.getElementById('range-value').value = forecastHoursValue;
-        document.getElementById('range-units').value = 'hours';
-        document.getElementById('forecast-hours').value = forecastHoursValue;
-      }
+      document.getElementById('graph-range-wrapper').style.display = 'none';
     }
 
     function updateRangeFieldsVisibility() {
@@ -1798,27 +2138,24 @@
     document.getElementById('start-dt').addEventListener('change', updateDashboard);
     document.getElementById('end-dt').addEventListener('change', updateDashboard);
     document.getElementById('apply-range').addEventListener('click', updateDashboard);
-    document.getElementById('show-forecast').addEventListener('change', updateDashboard);
-    document.getElementById('show-forecast').addEventListener('change', updateForecastControls);
-    document.getElementById('show-ensemble').addEventListener('change', () => {
-      updateEnsembleControls();
+    document.getElementById('show-forecast').addEventListener('change', () => {
+      updateForecastControls();
       updateDashboard();
     });
-    document.getElementById('ensemble-hours').addEventListener('change', updateDashboard);
+    document.getElementById('forecast-mode').addEventListener('change', () => {
+      updateForecastControls();
+      updateDashboard();
+    });
+    document.getElementById('use-one-link').addEventListener('change', updateDashboard);
     document.getElementById('forecast-hours').addEventListener('change', () => {
       updateSyncControls();
       updateForecastControls();
       updateDashboard();
     });
-    document.getElementById('use-forecast-threshold').addEventListener('change', (e) => {
+    document.getElementById('use-forecast-threshold').addEventListener('change', () => {
       updateThresholdControls();
       updateDashboard();
     });
-    document.getElementById('use-ensemble-threshold').addEventListener('change', () => {
-      updateEnsembleControls();
-      updateDashboard();
-    });
-    document.getElementById('ensemble-threshold').addEventListener('change', updateDashboard);
     document.getElementById('sync-obs-forecast').addEventListener('change', () => {
       updateSyncControls();
       updateDashboard();

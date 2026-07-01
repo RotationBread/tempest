@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Weather Record Explorer (Instant)</title>
+
+<style>
+body {
+    font-family: Arial;
+    background: #0f1116;
+    color: #e6e6e6;
+}
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+}
+
+input, button {
+    padding: 10px;
+    margin: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+td, th {
+    border: 1px solid #333;
+    padding: 6px;
+    font-size: 12px;
+}
+
+th {
+    background: #1c1f2a;
+}
+
+.good {
+    color: #7CFC90;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>Weather Record Explorer (Instant Mode)</h2>
+
+<label>Select Date/Time:</label>
+<input type="datetime-local" id="timeInput">
+<button onclick="compute()">Compute</button>
+
+<div id="status">Loading CSV...</div>
+<div id="output"></div>
+
+</div>
+
+<script>
+let data = [];
+
+async function loadCSV() {
+    const res = await fetch("record.csv");
+    const text = await res.text();
+
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",");
+
+    data = lines.slice(1).map(line => {
+        const vals = line.split(",");
+        let obj = {};
+        headers.forEach((h,i) => {
+            let v = vals[i];
+            let n = parseFloat(v);
+            obj[h] = isNaN(n) ? v : n;
+        });
+        obj.timestamp = parseInt(obj.timestamp);
+        return obj;
+    });
+
+    document.getElementById("status").innerText =
+        "Loaded " + data.length + " rows";
+}
+
+loadCSV();
+
+// binary search
+function findIndex(ts) {
+    let l=0,r=data.length-1,ans=0;
+    while(l<=r){
+        let m=(l+r)>>1;
+        if(data[m].timestamp<=ts){
+            ans=m;
+            l=m+1;
+        }else r=m-1;
+    }
+    return ans;
+}
+
+function fmt(ts){
+    return new Date(ts*1000).toLocaleString();
+}
+
+// find max + timestamp in range
+function scanMax(field, slice){
+    let best=-Infinity, t=0;
+    for(let i=0;i<slice.length;i++){
+        let v=slice[i][field];
+        if(v>best){
+            best=v;
+            t=slice[i].timestamp;
+        }
+    }
+    return [best,t];
+}
+
+function scanMin(field, slice){
+    let best=Infinity, t=0;
+    for(let i=0;i<slice.length;i++){
+        let v=slice[i][field];
+        if(v<best){
+            best=v;
+            t=slice[i].timestamp;
+        }
+    }
+    return [best,t];
+}
+
+function compute(){
+
+    const input=document.getElementById("timeInput").value;
+    if(!input) return alert("Pick time");
+
+    const ts=Math.floor(new Date(input).getTime()/1000);
+    const idx=findIndex(ts);
+    const slice=data.slice(0,idx+1);
+
+    let html=`<h3>Records up to ${fmt(ts)}</h3>`;
+    html+="<table><tr><th>Record</th><th>Value</th><th>When Set</th></tr>";
+
+    function add(n,v,t){
+        html+=`<tr><td>${n}</td><td class='good'>${v}</td><td>${fmt(t)}</td></tr>`;
+    }
+
+    // =========================
+    // CORE TEMP RECORDS
+    // =========================
+    let [maxT, maxTt]=scanMax("air_temperature",slice);
+    let [minT, minTt]=scanMin("air_temperature",slice);
+
+    add("Max Temp",maxT,maxTt);
+    add("Min Temp",minT,minTt);
+
+    // =========================
+    // ALL DELTA RECORDS (FROM CSV)
+    // =========================
+    const tempDeltas = [
+        ["temp_delta_5min","5 min increase"],
+        ["temp_delta_15min","15 min increase"],
+        ["temp_delta_30min","30 min increase"],
+        ["temp_delta_1hr","1 hr increase"],
+        ["temp_delta_3hr","3 hr increase"],
+        ["temp_delta_6hr","6 hr increase"],
+        ["temp_delta_12hr","12 hr increase"],
+        ["temp_delta_24hr","24 hr increase"],
+        ["temp_delta_48hr","48 hr increase"]
+    ];
+
+    tempDeltas.forEach(d=>{
+        let [v,t]=scanMax(d[0],slice);
+        add("Greatest "+d[1],v,t);
+    });
+
+    tempDeltas.forEach(d=>{
+        let [v,t]=scanMin(d[0],slice);
+        add("Greatest "+d[1]+" drop",v,t);
+    });
+
+    // =========================
+    // DIRECT FIELD RECORDS
+    // =========================
+    const maxFields=[
+        "wind_avg",
+        "wind_gust",
+        "wind_lull",
+        "solar_radiation",
+        "uv",
+        "brightness",
+        "precip",
+        "precip_1hr",
+        "precip_3hr",
+        "precip_6hr",
+        "precip_12hr",
+        "precip_24hr",
+        "precip_true_24hr",
+        "lightning_strike_count_last_1hr",
+        "lightning_strike_count_last_3hr",
+        "lightning_1day",
+        "air_density"
+    ];
+
+    const minFields=[
+        "relative_humidity",
+        "air_density"
+    ];
+
+    const bothFields=[
+        "station_pressure",
+        "sea_level_pressure",
+        "feels_like",
+        "wet_bulb_temperature",
+        "wet_bulb_globe_temperature",
+        "dew_point",
+        "delta_t"
+    ];
+
+    maxFields.forEach(f=>{
+        let [v,t]=scanMax(f,slice);
+        add("Highest "+f,v,t);
+    });
+
+    minFields.forEach(f=>{
+        let [v,t]=scanMin(f,slice);
+        add("Lowest "+f,v,t);
+    });
+
+    bothFields.forEach(f=>{
+        let [mx,tx]=scanMax(f,slice);
+        let [mn,tn]=scanMin(f,slice);
+        add("Max "+f,mx,tx);
+        add("Min "+f,mn,tn);
+    });
+
+    html+="</table>";
+    document.getElementById("output").innerHTML=html;
+}
+</script>
+
+</body>
+</html>

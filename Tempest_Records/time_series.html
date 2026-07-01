@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Change Tracker</title>
+
+<style>
+body {
+    font-family: Arial;
+    background: #0f1116;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 20px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 13px;
+}
+
+th, td {
+    border: 1px solid #2a2f3a;
+    padding: 6px;
+    text-align: left;
+}
+
+th {
+    background: #1a1f2a;
+    position: sticky;
+    top: 0;
+}
+
+tr:nth-child(even) {
+    background: #141824;
+}
+
+#status {
+    margin-bottom: 10px;
+    color: #9aa4b2;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Record Change Log</h2>
+<div id="status">Loading CSV...</div>
+
+<table>
+<thead>
+<tr>
+    <th>Timestamp (EDT)</th>
+    <th>Column</th>
+    <th>Old Value</th>
+    <th>New Value</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+<script>
+const csvUrl = "record_time_series.csv";
+
+// Convert epoch → EDT string
+function formatEDT(epoch) {
+    const d = new Date(Number(epoch) * 1000);
+    return d.toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+}
+
+// Simple CSV parser (no libraries)
+function parseCSV(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",");
+
+    return lines.slice(1).map(line => {
+        const values = line.split(",");
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = values[i]);
+        return obj;
+    });
+}
+
+function addRow(tbody, timestamp, column, oldVal, newVal) {
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+        <td>${formatEDT(timestamp)}</td>
+        <td>${column}</td>
+        <td>${oldVal}</td>
+        <td>${newVal}</td>
+    `;
+
+    tbody.appendChild(tr);
+}
+
+fetch(csvUrl)
+.then(r => r.text())
+.then(text => {
+    const data = parseCSV(text);
+    const tbody = document.getElementById("tableBody");
+
+    if (data.length < 2) {
+        document.getElementById("status").innerText = "Not enough data.";
+        return;
+    }
+
+    const headers = Object.keys(data[0]).filter(h => h !== "timestamp");
+
+    let changes = [];
+
+    for (let i = 1; i < data.length; i++) {
+        const prev = data[i - 1];
+        const curr = data[i];
+
+        const ts = curr.timestamp;
+
+        for (const col of headers) {
+            const oldVal = prev[col];
+            const newVal = curr[col];
+
+            if (oldVal !== newVal) {
+                changes.push({
+                    ts,
+                    col,
+                    oldVal,
+                    newVal
+                });
+            }
+        }
+    }
+
+    // sort by time
+    changes.sort((a, b) => a.ts - b.ts);
+
+    for (const c of changes) {
+        addRow(tbody, c.ts, c.col, c.oldVal, c.newVal);
+    }
+
+    document.getElementById("status").innerText =
+        `Loaded ${data.length} rows, ${changes.length} changes found.`;
+})
+.catch(err => {
+    document.getElementById("status").innerText = "Error loading CSV.";
+    console.error(err);
+});
+</script>
+
+</body>
+</html>

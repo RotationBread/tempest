@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>O(n) Rolling Window Error Approx</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #0f0f0f;
+      color: #ddd;
+      font-family: Arial, sans-serif;
+    }
+
+    #chart {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+
+<body>
+<div id="chart"></div>
+
+<script>
+fetch("temp.csv")
+.then(r => r.text())
+.then(text => {
+
+  // ---------------- PARSE ----------------
+  const y = text.trim().split("\n")
+    .map(l => parseFloat(l.split(",")[1]))
+    .filter(v => !isNaN(v));
+
+  const n = y.length;
+
+  // ---------------- PREFIX SUMS ----------------
+  const prefix = new Array(n);
+  const prefixSq = new Array(n);
+
+  prefix[0] = y[0];
+  prefixSq[0] = y[0] * y[0];
+
+  for (let i = 1; i < n; i++) {
+    prefix[i] = prefix[i - 1] + y[i];
+    prefixSq[i] = prefixSq[i - 1] + y[i] * y[i];
+  }
+
+  function mean(l, r) {
+    const sum = prefix[r] - (l > 0 ? prefix[l - 1] : 0);
+    return sum / (r - l + 1);
+  }
+
+  function variance(l, r) {
+    const n2 = r - l + 1;
+
+    const sum = prefix[r] - (l > 0 ? prefix[l - 1] : 0);
+    const sumSq = prefixSq[r] - (l > 0 ? prefixSq[l - 1] : 0);
+
+    const m = sum / n2;
+    return (sumSq / n2) - m * m;
+  }
+
+  // ---------------- ERROR APPROXIMATION ----------------
+  // MAE ~ sqrt(variance) for distribution-like signals
+  function approxError(window) {
+    let err = 0;
+    let count = 0;
+
+    for (let i = window - 1; i < n; i++) {
+      const v = variance(i - window + 1, i);
+      err += Math.sqrt(Math.max(v, 0));
+      count++;
+    }
+
+    return err / count;
+  }
+
+  // ---------------- COMPUTE CURVE O(n) ----------------
+  const xs = [];
+  const ys = [];
+
+  const step = Math.max(1, Math.floor(n/(n))); 
+
+  for (let w = 1; w <= n; w += step) {
+    xs.push(w);
+    ys.push(approxError(w));
+  }
+
+  // ---------------- PLOT ----------------
+  Plotly.newPlot("chart", [{
+    x: xs,
+    y: ys,
+    mode: "lines",
+    line: { color: "#ffcc00", width: 2 }
+  }], {
+    paper_bgcolor: "#0f0f0f",
+    plot_bgcolor: "#0f0f0f",
+    font: { color: "#ddd" },
+    xaxis: { title: "Window Size" },
+    yaxis: { title: "Approx Error (O(n) variance proxy)" }
+  });
+
+});
+</script>
+
+</body>
+</html>

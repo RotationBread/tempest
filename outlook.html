@@ -150,7 +150,7 @@
 </head>
 <body>
   <div class="top-bar">
-    <div class="progress-text">
+    <div id="preloadSection" class="progress-text">
       <strong>Preload progress:</strong> <span id="preloadLabel">0 / 0</span>
       <span id="preloadEta" style="display:block; margin-top:6px; color:#a5b4fc; font-size:0.95rem;">ETA: --:--</span>
       <div class="progress-track"><div id="preloadFill" class="progress-fill"></div></div>
@@ -158,6 +158,10 @@
     <div class="progress-text">
       <strong>Slideshow progress:</strong> <span id="slideLabel">0 / 0</span>
       <div class="progress-track"><div id="slideFill" class="progress-fill"></div></div>
+    </div>
+    <div class="progress-text">
+      <strong>Days progress:</strong> <span id="daysLabel">0 / 0</span>
+      <div class="progress-track"><div id="daysFill" class="progress-fill"></div></div>
     </div>
   </div>
 
@@ -174,6 +178,10 @@
       <div class="info-card"><strong>Testing:</strong> <span id="testingDate">2014-12-17</span></div>
       <div class="info-card"><strong>Valid slides:</strong> <span id="validCount">0</span></div>
       <div class="info-card"><strong>Skipped:</strong> <span id="failedCount">0</span></div>
+      <div class="info-card"><strong>Current keywords:</strong> <span id="currentKeywords">None</span></div>
+      <div class="info-card"><strong>Missing-page hits:</strong> <span id="keywordHitsCount">0</span></div>
+      <div class="info-card"><strong>No-keyword skips:</strong> <span id="skippedNoKeywordsCount">0</span></div>
+      <div class="info-card"><strong>Skipped (lat &le; 42):</strong> <span id="skippedLowLatCount">0</span></div>
     </div>
 
     <div class="image-wrapper">
@@ -184,20 +192,42 @@
     <div id="errorMessage" class="error"></div>
 
     <section class="failed-section">
+      <h2>Days Missing Expected Runs</h2>
+      <div id="expectedRunFailuresList" class="failed-list"></div>
+    </section>
+
+    <section class="failed-section">
       <h2>Skipped Dates</h2>
       <div id="failedList" class="failed-list"></div>
       <h2 style="margin-top:16px">Missing Page Errors</h2>
       <div id="missingList" class="failed-list"></div>
+      <h2 style="margin-top:16px">Keyword Hits</h2>
+      <div id="actualKeywordHitsList" class="failed-list"></div>
+      <h2 style="margin-top:16px">Missing Page Keyword Hits</h2>
+      <div id="keywordHitsList" class="failed-list"></div>
+      <h2 style="margin-top:16px">Skipped with No Keywords</h2>
+      <div id="skippedNoKeywordsList" class="failed-list"></div>
+      <h2 style="margin-top:16px">Skipped (low lat &le; 42)</h2>
+      <div id="skippedLowLatList" class="failed-list"></div>
     </section>
   </main>
 
   <script>
-    const startDate = new Date(Date.UTC(2011, 3, 9));
-    const endDate = new Date(Date.UTC(2024, 6, 22));
-    const entries = []; // {date: Date, time: '0730'|'0830'|'1930'}
-    const oneDay = 24 * 60 * 60 * 1000;
-    const times = ['1200', '0830','0730','1100'];
+    const startDate = new Date(Date.UTC(2022, 4, 2));
+    const endDate = new Date(Date.UTC(2026, 5, 19));
+    const expectedruns = 2;
+    const imageUrlTemplate = 'https://www.spc.noaa.gov/products/outlook/archive/{year}/day2probotlk_{yyyymmdd}_{time}_wind_prt.gif';
+    const htmlUrlTemplate = 'https://www.spc.noaa.gov/products/outlook/archive/{year}/day2otlk_{yyyymmdd}_{time}.html';
+    const keywordTextUrlTemplate = 'https://www.spc.noaa.gov/products/outlook/archive/{year}/KWNSPTSDY2_{yyyymmdd}{time}.txt';
+    const geojsonUrlTemplate = 'https://www.spc.noaa.gov/products/outlook/archive/{year}/day2otlk_{yyyymmdd}_{time}_prob.nolyr.geojson'
+    const keywordSection = 'WIND';
+    const times = ['0600', '0700', '1730'];
+    const keywordPattern = /\b(?:0.05|0.15|0.30|0.45|0.60|0.75|0.90)\b/i;
+    const keywordPatternGlobal = /\b(?:0.05|0.15|0.30|0.45|0.60|0.75|0.90)\b/gi;
+    const missingPagePhrase = "The page you've requested cannot be found.";
 
+    const entries = [];
+    const oneDay = 24 * 60 * 60 * 1000;
     for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + oneDay)) {
       for (const t of times) entries.push({date: new Date(d), time: t});
     }
@@ -205,16 +235,23 @@
     const totalDays = entries.length;
     const preloadLabel = document.getElementById('preloadLabel');
     const preloadFill = document.getElementById('preloadFill');
+    const preloadSection = document.getElementById('preloadSection');
     const slideLabel = document.getElementById('slideLabel');
     const slideFill = document.getElementById('slideFill');
+    const daysLabel = document.getElementById('daysLabel');
+    const daysFill = document.getElementById('daysFill');
     const currentDateEl = document.getElementById('currentDate');
     const testingDateEl = document.getElementById('testingDate');
     const totalDaysEl = document.getElementById('totalDays');
     const validCountEl = document.getElementById('validCount');
     const failedCountEl = document.getElementById('failedCount');
+    const currentKeywordsEl = document.getElementById('currentKeywords');
+    const keywordHitsCountEl = document.getElementById('keywordHitsCount');
+    const skippedNoKeywordsCountEl = document.getElementById('skippedNoKeywordsCount');
     const failedListEl = document.getElementById('failedList');
     const preloadEtaEl = document.getElementById('preloadEta');
     const slideImage = document.getElementById('slideImage');
+    const skippedLowLatCountEl = document.getElementById('skippedLowLatCount');
     const overlay = document.getElementById('overlay');
     const prevButton = document.getElementById('prevButton');
     const nextButton = document.getElementById('nextButton');
@@ -226,6 +263,12 @@
     const allSlides = []; // {date, time, url, image}
     const failedDates = []; // entries that failed image but no missing-page message
     const missingPages = []; // entries where html reported missing page text
+    const missingPageKeywordMatches = []; // entries where missing page text was found via keyword file
+    const keywordHits = []; // entries where keywords were found in the text file and passed lat test
+    const skippedNoKeywords = []; // entries skipped because the keyword text file had no watch keywords
+    const skippedLowLat = []; // entries skipped because no polygon latitude > 42
+    const missingRunsByDay = new Map(); // dateKey -> {date, missingTimes: Set<string>}
+    const totalRunsPerDay = times.length;
     let testedCount = 0;
     let currentSlideIndex = 0;
     let preloadFinished = false;
@@ -244,20 +287,73 @@
     function imageUrl(entry) {
       const yyyymmdd = formatDate(entry.date);
       const year = entry.date.getUTCFullYear();
-      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}_prt.gif`;
-   
+      return imageUrlTemplate
+        .replace('{year}', year)
+        .replace('{yyyymmdd}', yyyymmdd)
+        .replace('{time}', entry.time);
+    }
+
+    function getDateKey(date) {
+      return formatDate(date);
+    }
+
+    function markMissingRun(entry) {
+      const key = getDateKey(entry.date);
+      const existing = missingRunsByDay.get(key);
+      if (existing) {
+        existing.missingTimes.add(entry.time);
+      } else {
+        missingRunsByDay.set(key, { date: entry.date, missingTimes: new Set([entry.time]) });
+      }
+      renderExpectedRunFailures();
+    }
+
+    function renderExpectedRunFailures() {
+      const listEl = document.getElementById('expectedRunFailuresList');
+      listEl.innerHTML = '';
+      const failures = [];
+      for (const { date, missingTimes } of missingRunsByDay.values()) {
+        const nonMissingRuns = totalRunsPerDay - missingTimes.size;
+        if (nonMissingRuns < expectedruns) {
+          failures.push({ date, missingTimes });
+        }
+      }
+      failures.sort((a, b) => a.date.getTime() - b.date.getTime());
+      if (!failures.length) {
+        const empty = document.createElement('a');
+        empty.textContent = `All dates have at least ${expectedruns} non-missing runs.`;
+        empty.href = 'javascript:void(0)';
+        empty.style.cursor = 'default';
+        listEl.appendChild(empty);
+        return;
+      }
+      failures.forEach(({ date, missingTimes }) => {
+        const link = document.createElement('a');
+        const dateText = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+        const missingText = Array.from(missingTimes).sort().join(', ');
+        link.href = 'javascript:void(0)';
+        link.textContent = `${dateText}: missing ${missingText}`;
+        link.style.cursor = 'default';
+        listEl.appendChild(link);
+      });
     }
 
     function htmlCheckUrl(entry) {
       const yyyymmdd = formatDate(entry.date);
       const year = entry.date.getUTCFullYear();
-      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}.html`;
+      return htmlUrlTemplate
+        .replace('{year}', year)
+        .replace('{yyyymmdd}', yyyymmdd)
+        .replace('{time}', entry.time);
     }
 
     function backupHtmlUrl(entry) {
       const yyyymmdd = formatDate(entry.date);
       const year = entry.date.getUTCFullYear();
-      return `https://www.spc.noaa.gov/products/outlook/archive/${year}/day3otlk_${yyyymmdd}_${entry.time}.html`;
+      return htmlUrlTemplate
+        .replace('{year}', year)
+        .replace('{yyyymmdd}', yyyymmdd)
+        .replace('{time}', entry.time);
     }
 
     function renderFailedList() {
@@ -290,6 +386,165 @@
       });
     }
 
+    function renderKeywordHits() {
+      const listEl = document.getElementById('keywordHitsList');
+      listEl.innerHTML = '';
+      missingPageKeywordMatches.forEach(obj => {
+        const entry = obj.entry || obj;
+        const href = obj.keywordUrl || textCheckUrl(entry);
+        const keywordsText = obj.keywords && obj.keywords.length ? ` [${obj.keywords.join(', ')}]` : '';
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}${keywordsText}`;
+        listEl.appendChild(link);
+      });
+      keywordHitsCountEl.textContent = missingPageKeywordMatches.length;
+    }
+
+    function renderSkippedNoKeywords() {
+      const listEl = document.getElementById('skippedNoKeywordsList');
+      listEl.innerHTML = '';
+      skippedNoKeywords.forEach(obj => {
+        const entry = obj.entry || obj;
+        const href = obj.keywordUrl || textCheckUrl(entry);
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}`;
+        listEl.appendChild(link);
+      });
+      skippedNoKeywordsCountEl.textContent = skippedNoKeywords.length;
+    }
+
+    function renderSkippedLowLat() {
+      const listEl = document.getElementById('skippedLowLatList');
+      listEl.innerHTML = '';
+      skippedLowLat.forEach(obj => {
+        const entry = obj.entry || obj;
+        const href = obj.checkUrl || htmlCheckUrl(entry);
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}`;
+        listEl.appendChild(link);
+      });
+      skippedLowLatCountEl.textContent = skippedLowLat.length;
+    }
+
+    function renderActualKeywordHits() {
+      const listEl = document.getElementById('actualKeywordHitsList');
+      listEl.innerHTML = '';
+      keywordHits.forEach(obj => {
+        const entry = obj.entry || obj;
+        const href = obj.keywordUrl || textCheckUrl(entry);
+        const keywordsText = obj.keywords && obj.keywords.length ? ` [${obj.keywords.join(', ')}]` : '';
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, '0')}-${String(entry.date.getUTCDate()).padStart(2, '0')} ${entry.time}${keywordsText}`;
+        listEl.appendChild(link);
+      });
+    }
+
+    function getKeywordSectionText(text) {
+      const source = text || '';
+      if (!keywordSection) return source;
+
+      const escapedSection = keywordSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const sectionHeader = new RegExp(`^\\s*\\.\\.\\.\\s*${escapedSection}\\s*\\.\\.\\.\\s*$`, 'im');
+      const headerMatch = source.match(sectionHeader);
+      if (!headerMatch) return '';
+
+      const sectionStart = headerMatch.index + headerMatch[0].length;
+      const sectionRemainder = source.slice(sectionStart);
+      const sectionEnd = sectionRemainder.match(/^\s*(?:&&|\.\.\.\s*[^.\r\n]+?\s*\.\.\.)\s*$/m);
+
+      return sectionEnd ? sectionRemainder.slice(0, sectionEnd.index) : sectionRemainder;
+    }
+
+    function extractPolygonsFromText(text, keyword) {
+      const lines = (text || '').split(/\r?\n/);
+      const polygons = [];
+      let collecting = false;
+      let tokens = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) {
+          if (collecting && tokens.length) { polygons.push(...tokensToPolygons(tokens)); tokens = []; }
+          collecting = false;
+          continue;
+        }
+        if (new RegExp('^' + keyword + '\\b').test(line)) {
+          collecting = true;
+          const parts = line.replace(new RegExp('^' + keyword + '\\b'), '').trim().split(/\s+/);
+          tokens = tokens.concat(parts.filter(p => p.length));
+          continue;
+        }
+        if (collecting && /^\s+/.test(line)) {
+          const parts = line.trim().split(/\s+/);
+          tokens = tokens.concat(parts.filter(p => p.length));
+          continue;
+        }
+        if (collecting) {
+          if (tokens.length) { polygons.push(...tokensToPolygons(tokens)); tokens = []; }
+          collecting = false;
+        }
+      }
+      if (tokens.length) polygons.push(...tokensToPolygons(tokens));
+      return polygons;
+    }
+
+    function tokensToPolygons(tokens) {
+      const out = [];
+      let current = [];
+      for (const tok of tokens) {
+        if (!tok) continue;
+        if (tok === '99999999') { if (current.length) { out.push(current); current = []; } continue; }
+        if (/^\d{8}$/.test(tok)) {
+          const lat = parseInt(tok.slice(0, 4), 10) / 100.0;
+          const lon = parseInt(tok.slice(4, 8), 10) / 100.0;
+          current.push([lat, lon]);
+        }
+      }
+      if (current.length) out.push(current);
+      return out;
+    }
+
+    function addSlideEntry(entry, result, keywords) {
+      const slideEntry = {date: result.entry.date, time: result.entry.time, url: result.url, image: result.image, keywords};
+      const insertIndex = allSlides.findIndex(slide => slide.date.getTime() > result.entry.date.getTime() || (slide.date.getTime() === result.entry.date.getTime() && slide.time > result.entry.time));
+      if (insertIndex === -1) {
+        allSlides.push(slideEntry);
+      } else {
+        allSlides.splice(insertIndex, 0, slideEntry);
+      }
+      validCountEl.textContent = allSlides.length;
+      if (allSlides.length === 1) {
+        showSlide(0);
+      }
+    }
+
+    function fetchKeywordText(entry) {
+      const keywordUrl = textCheckUrl(entry);
+      return fetch(keywordUrl, { mode: 'cors' })
+        .then(resp => resp.text().then(text => ({ ok: resp.ok, text, url: keywordUrl, missingPage: (text || '').includes(missingPagePhrase) })))
+        .catch(() => ({ ok: false, text: '', url: keywordUrl, missingPage: false }));
+    }
+
+    function textCheckUrl(entry) {
+      const yyyymmdd = formatDate(entry.date);
+      const year = entry.date.getUTCFullYear();
+      return keywordTextUrlTemplate
+        .replace('{year}', year)
+        .replace('{yyyymmdd}', yyyymmdd)
+        .replace('{time}', entry.time);
+    }
+
     function formatEta(seconds) {
       if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
       const minutes = Math.floor(seconds / 60);
@@ -320,16 +575,33 @@
       slideFill.style.width = total ? `${((current / total) * 100).toFixed(3)}%` : '0%';
     }
 
+    function updateDaysProgress() {
+      if (!allSlides.length) {
+        daysLabel.textContent = '0 / 0';
+        daysFill.style.width = '0%';
+        return;
+      }
+      const slide = allSlides[currentSlideIndex];
+      const totalDaysInRange = (endDate - startDate) / oneDay;
+      const daysPassed = (slide.date - startDate) / oneDay;
+      const percentage = (daysPassed / totalDaysInRange) * 100;
+      daysLabel.textContent = `${Math.round(daysPassed)} / ${Math.round(totalDaysInRange)} (${percentage.toFixed(3)}%)`;
+      daysFill.style.width = `${percentage.toFixed(3)}%`;
+    }
+
     function showSlide(index) {
       if (!allSlides.length) {
         currentDateEl.textContent = 'No slides loaded yet';
+        currentKeywordsEl.textContent = 'None';
         slideImage.src = '';
         updateSlideProgress();
+        updateDaysProgress();
         return;
       }
       currentSlideIndex = (index + allSlides.length) % allSlides.length;
       const slide = allSlides[currentSlideIndex];
       currentDateEl.textContent = `${slide.date.getUTCFullYear()}-${String(slide.date.getUTCMonth() + 1).padStart(2, '0')}-${String(slide.date.getUTCDate()).padStart(2, '0')}`;
+      currentKeywordsEl.textContent = slide.keywords ? slide.keywords.join(', ') : 'None';
       if (slide.image && slide.image.src) {
         slideImage.src = slide.image.src;
       } else {
@@ -337,6 +609,7 @@
       }
       errorMessage.textContent = '';
       updateSlideProgress();
+      updateDaysProgress();
     }
 
     function showOverlay(message) {
@@ -393,21 +666,24 @@
     }
 
     async function preloadAll() {
-      const concurrency = 12;
+      const concurrency = 4;
       let active = 0;
       let nextIndex = 0;
 
       function finishIfDone() {
         if (nextIndex >= entries.length && active === 0 && activeChecks === 0) {
           preloadFinished = true;
+          preloadSection.style.display = 'none';
           allSlides.sort((a, b) => a.date.getTime() - b.date.getTime() || a.time.localeCompare(b.time));
           failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
           missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
           renderFailedList();
           renderMissingList();
+          renderExpectedRunFailures();
           showOverlay('Preload complete. Use arrow keys or buttons to browse.');
           setTimeout(hideOverlay, 1200);
           updateSlideProgress();
+          updateDaysProgress();
         }
       }
 
@@ -421,14 +697,11 @@
                 .then(resp2 => resp2.text().then(text2 => ({ ok: resp2.ok, text: text2 })))
                 .then(r2 => {
                   if (!r2.ok || (r2.text && r2.text.includes("The page you've requested cannot be found."))) {
-                    missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
-                    missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
-                    renderMissingList();
-                  } else {
-                    failedDates.push({ entry, checkUrl: primaryUrl });
-                    failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
-                    renderFailedList();
+                    return checkKeywordText(entry, primaryUrl, backupUrl);
                   }
+                  failedDates.push({ entry, checkUrl: primaryUrl });
+                  failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                  renderFailedList();
                 });
             }
             failedDates.push({ entry, checkUrl: backupUrl });
@@ -436,30 +709,113 @@
             renderFailedList();
           })
           .catch(() => {
-            return fetch(primaryUrl, { mode: 'cors' })
-              .then(resp => resp.text().then(text => ({ ok: resp.ok, text })))
-              .then(r => {
-                if (!r.ok || (r.text && r.text.includes("The page you've requested cannot be found."))) {
-                  missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
-                  missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
-                  renderMissingList();
-                } else {
-                  failedDates.push({ entry, checkUrl: primaryUrl });
-                  failedDates.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
-                  renderFailedList();
-                }
-              })
-              .catch(() => {
-                missingPages.push({ entry, checkUrl: primaryUrl, backupUrl });
-                missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
-                renderMissingList();
-              });
+            return checkKeywordText(entry, primaryUrl, backupUrl);
           })
           .finally(() => {
             activeChecks -= 1;
             finishIfDone();
           });
       }
+
+      function checkKeywordText(entry, primaryUrl, backupUrl) {
+  const keywordUrl = textCheckUrl(entry);
+
+  return fetch(keywordUrl, { mode: 'cors' })
+    .then(resp => resp.text().then(text => ({ ok: resp.ok, text })))
+    .then(r => {
+      if (!r.ok) {
+        missingPages.push({ entry, checkUrl: primaryUrl, backupUrl, keywordUrl });
+        markMissingRun(entry);
+        missingPages.sort((a, b) =>
+          a.entry.date.getTime() - b.entry.date.getTime() ||
+          a.entry.time.localeCompare(b.entry.time)
+        );
+        renderMissingList();
+        return;
+      }
+
+      if ((r.text || '').includes(missingPagePhrase)) {
+        missingPageKeywordMatches.push({ entry, keywordUrl, keywords: ['N/A'] });
+        markMissingRun(entry);
+        missingPageKeywordMatches.sort((a, b) =>
+          a.entry.date.getTime() - b.entry.date.getTime() ||
+          a.entry.time.localeCompare(b.entry.time)
+        );
+        renderKeywordHits();
+        return;
+      }
+
+      const keywordSectionText = getKeywordSectionText(r.text);
+      const keywords = keywordSectionText.match(keywordPatternGlobal) || [];
+
+      if (keywords.length) {
+        const normalizedKeywords = Array.from(
+          new Set(keywords.map(k => k.toUpperCase()))
+        ).sort();
+
+        // extract polygons
+        let combinedPolygons = [];
+        for (const kw of normalizedKeywords) {
+          const polys = extractPolygonsFromText(keywordSectionText, kw);
+          if (polys && polys.length) {
+            combinedPolygons = combinedPolygons.concat(polys);
+          }
+        }
+
+        if (allSlides.length > 0) {
+          const existing = allSlides.find(
+            slide =>
+              slide.date.getTime() === entry.date.getTime() &&
+              slide.time === entry.time
+          );
+
+          if (existing) {
+            existing.keywords = normalizedKeywords;
+            existing.polygons = combinedPolygons;
+
+            // ✅ NEW FILTER LOGIC
+            const hasValidPoint = combinedPolygons.some(poly =>
+              poly.some(point => {
+                const lat = point[0];
+                const lon = Math.abs(point[1]); // force positive
+
+                return lat > 42 && lon >= 72 && lon <= 93;
+              })
+            );
+
+            if (!hasValidPoint) {
+              // remove + mark skipped
+              allSlides.splice(allSlides.indexOf(existing), 1);
+
+              skippedLowLat.push({ entry, keywordUrl });
+              skippedLowLat.sort((a, b) =>
+                a.entry.date.getTime() - b.entry.date.getTime() ||
+                a.entry.time.localeCompare(b.entry.time)
+              );
+
+              renderSkippedLowLat();
+            }
+          }
+        }
+      } else {
+        skippedNoKeywords.push({ entry, keywordUrl });
+        skippedNoKeywords.sort((a, b) =>
+          a.entry.date.getTime() - b.entry.date.getTime() ||
+          a.entry.time.localeCompare(b.entry.time)
+        );
+        renderSkippedNoKeywords();
+      }
+    })
+    .catch(() => {
+      missingPages.push({ entry, checkUrl: primaryUrl, backupUrl, keywordUrl });
+      markMissingRun(entry);
+      missingPages.sort((a, b) =>
+        a.entry.date.getTime() - b.entry.date.getTime() ||
+        a.entry.time.localeCompare(b.entry.time)
+      );
+      renderMissingList();
+    });
+}
 
       function startNext() {
         while (active < concurrency && nextIndex < entries.length) {
@@ -468,18 +824,63 @@
           preloadImage(entry).then(result => {
             testedCount += 1;
             updatePreloadProgress();
-            if (result.success) {
-              const slideEntry = {date: result.entry.date, time: result.entry.time, url: result.url, image: result.image};
-              const insertIndex = allSlides.findIndex(slide => slide.date.getTime() > result.entry.date.getTime() || (slide.date.getTime() === result.entry.date.getTime() && slide.time > result.entry.time));
-              if (insertIndex === -1) {
-                allSlides.push(slideEntry);
-              } else {
-                allSlides.splice(insertIndex, 0, slideEntry);
-              }
-              validCountEl.textContent = allSlides.length;
-              if (allSlides.length === 1) {
-                showSlide(0);
-              }
+              if (result.success) {
+              activeChecks += 1;
+              fetchKeywordText(entry)
+                .then(({ ok, text, url, missingPage }) => {
+                  if (missingPage) {
+                    addSlideEntry(entry, result, ['N/A']);
+                    missingPageKeywordMatches.push({ entry, keywordUrl: url, keywords: ['N/A'] });
+                    markMissingRun(entry);
+                    missingPageKeywordMatches.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                    renderKeywordHits();
+                    return;
+                  }
+                  const keywordSectionText = getKeywordSectionText(text);
+                  const keywords = keywordSectionText.match(keywordPatternGlobal) || [];
+                  const normalizedKeywords = Array.from(new Set(keywords.map(k => k.toUpperCase()))).sort();
+                  if (normalizedKeywords.length) {
+                    // extract polygons for all matched keywords and decide whether to include
+                    let combinedPolygons = [];
+                    for (const kw of normalizedKeywords) {
+                      const polys = extractPolygonsFromText(keywordSectionText, kw);
+                      if (polys && polys.length) combinedPolygons = combinedPolygons.concat(polys);
+                    }
+                    const hasLatAbove42 = combinedPolygons.some(poly => poly.some(point => point[0] > 42));
+                    if (hasLatAbove42) {
+                      addSlideEntry(entry, result, normalizedKeywords);
+                      // attach polygons to slide
+                      const existing = allSlides.find(s => s.date.getTime() === result.entry.date.getTime() && s.time === result.entry.time);
+                      if (existing) existing.polygons = combinedPolygons;
+                      // record as an actual keyword hit (not a missing-page hit)
+                      keywordHits.push({ entry, keywordUrl: url, keywords: normalizedKeywords });
+                      keywordHits.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                      renderActualKeywordHits();
+                    } else {
+                      skippedLowLat.push({ entry, keywordUrl: url });
+                      skippedLowLat.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                      renderSkippedLowLat();
+                    }
+                  } else if (ok) {
+                    skippedNoKeywords.push({ entry, keywordUrl: url });
+                    skippedNoKeywords.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                    renderSkippedNoKeywords();
+                  } else {
+                    missingPages.push({ entry, checkUrl: htmlCheckUrl(entry), backupUrl: backupHtmlUrl(entry), keywordUrl: url });
+                    missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                    renderMissingList();
+                  }
+                })
+                .catch(() => {
+                  missingPages.push({ entry, checkUrl: htmlCheckUrl(entry), backupUrl: backupHtmlUrl(entry), keywordUrl: textCheckUrl(entry) });
+                  markMissingRun(entry);
+                  missingPages.sort((a, b) => a.entry.date.getTime() - b.entry.date.getTime() || a.entry.time.localeCompare(b.entry.time));
+                  renderMissingList();
+                })
+                .finally(() => {
+                  activeChecks -= 1;
+                  finishIfDone();
+                });
             } else {
               const primaryUrl = htmlCheckUrl(entry);
               const backupUrl = backupHtmlUrl(entry);
@@ -554,6 +955,9 @@
     totalDaysEl.textContent = totalDays;
     failedCountEl.textContent = 0;
     validCountEl.textContent = 0;
+    keywordHitsCountEl.textContent = 0;
+    skippedNoKeywordsCountEl.textContent = 0;
+    skippedLowLatCountEl.textContent = 0;
     slideLabel.textContent = '0 / 0 (0.000%)';
     preloadLabel.textContent = `0 / ${totalDays} (0.000%)`;
     updateSlideProgress();

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSV Plot Viewer (Dual Source)</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+  <h3>Record Time Series Viewer</h3>
+
+  <select id="columnSelect"></select>
+  <div id="plot" style="width:100%;height:600px;"></div>
+
+  <script>
+    async function loadBothCSVs() {
+      const [res1, res2] = await Promise.all([
+        fetch("records.csv"),
+        fetch("record_time_series.csv")
+      ]);
+
+      const [text1, text2] = await Promise.all([
+        res1.text(),
+        res2.text()
+      ]);
+
+      function parseCSV(text) {
+        const rows = text.trim().split("\n").map(r => r.split(","));
+        const headers = rows[0];
+        const dataRows = rows.slice(1);
+
+        const timestampIndex = headers.indexOf("timestamp");
+
+        const timestamps = new Array(dataRows.length);
+        const columns = {};
+        headers.forEach(h => columns[h] = new Array(dataRows.length));
+
+        for (let i = 0; i < dataRows.length; i++) {
+          const row = dataRows[i];
+          timestamps[i] = new Date(Number(row[timestampIndex]) * 1000);
+
+          for (let j = 0; j < headers.length; j++) {
+            columns[headers[j]][i] = row[j];
+          }
+        }
+
+        // convert numeric
+        for (const h of headers) {
+          if (h !== "timestamp") {
+            columns[h] = columns[h].map(v => Number(v));
+          }
+        }
+
+        return { headers, timestamps, columns };
+      }
+
+      const data1 = parseCSV(text1);
+      const data2 = parseCSV(text2);
+
+      // ---- MERGE COLUMN LIST ----
+      const allColumns = new Set([
+        ...data1.headers,
+        ...data2.headers
+      ]);
+      allColumns.delete("timestamp");
+
+      const select = document.getElementById("columnSelect");
+
+      allColumns.forEach(col => {
+        const opt = document.createElement("option");
+        opt.value = col;
+        opt.textContent = col;
+        select.appendChild(opt);
+      });
+
+      function plotColumn(col) {
+        const traces = [];
+
+        // File 1
+        if (data1.columns[col]) {
+          traces.push({
+            x: data1.timestamps,
+            y: data1.columns[col],
+            mode: "lines",
+            name: col + " (file1)"
+          });
+        }
+
+        // File 2
+        if (data2.columns[col]) {
+          traces.push({
+            x: data2.timestamps,
+            y: data2.columns[col],
+            mode: "lines",
+            name: col + " (file2)"
+          });
+        }
+
+        const layout = {
+          title: col,
+          xaxis: {
+            title: "Time (ET)",
+            type: "date"
+          },
+          yaxis: {
+            title: col
+          }
+        };
+
+        Plotly.react("plot", traces, layout, { responsive: true });
+      }
+
+      select.addEventListener("change", () => {
+        plotColumn(select.value);
+      });
+
+      // initial
+      const firstCol = [...allColumns][0];
+      select.value = firstCol;
+      plotColumn(firstCol);
+    }
+
+    loadBothCSVs();
+  </script>
+</body>
+</html>
