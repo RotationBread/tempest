@@ -1,4 +1,4 @@
-import requests
+import requests # type: ignore
 import csv
 import io
 from datetime import datetime, timedelta, timezone
@@ -315,6 +315,9 @@ with open("master.csv", "w", newline="") as f:
             r(wind_chill_f, 3),
             r(dew_point_f, 3),
             r(wet_bulb_f, 3),
+
+
+
             r(c_to_f(WBGT_c), 3),
             r(delta_t_f, 3),
             r(air_density, 5)

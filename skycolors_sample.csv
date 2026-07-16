@@ -1,0 +1,14 @@
+altitude_deg,r,g,b,hex
+-30.0,4,8,32,#040820
+-12.0,12,20,48,#0c1430
+-6.0,58,12,48,#3a0c30
+-2.0,255,80,30,#ff501e
+0.0,255,160,60,#ffa03c
+5.0,255,200,120,#ffc878
+10.0,255,240,200,#fff0c8
+20.0,170,210,255,#aad2ff
+30.0,135,206,235,#87ceeb
+50.0,110,192,255,#6ec0ff
+73.0,160,223,255,#a0dfff
+
+# Note: This is a small representative sample. The interactive file 'skycolor.html' generates a full CSV at 0.1° resolution from -30° to 73° when you click "Download CSV".

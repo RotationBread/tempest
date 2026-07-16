@@ -1,0 +1,110 @@
+Alert,Color
+911 Telephone Outage,#C0C0C0
+Administrative Message,#D3D3D3
+Air Quality Alert,#808080
+Air Stagnation Advisory,#A9A9A9
+Ashfall Advisory,#696969
+Ashfall Warning,#A9A9A9
+Avalanche Advisory,#ADD8E6
+Avalanche Warning,#1E90FF
+Avalanche Watch,#87CEFA
+Beach Hazards Statement,#40E0D0
+Blizzard Warning,#FF4500
+Blowing Dust Advisory,#DEB887
+Blowing Dust Warning,#B22222
+Brisk Wind Advisory,#D2B48C
+Child Abduction Emergency,#FFFFFF
+Civil Danger Warning,#FFB6C1
+Civil Emergency Message,#FFB6C1
+Coastal Flood Advisory,#7FFFD4
+Coastal Flood Statement,#66CDAA
+Coastal Flood Warning,#228B22
+Coastal Flood Watch,#66CDAA
+Cold Weather Advisory,#4682B4
+Dense Fog Advisory,#708090
+Dense Smoke Advisory,#A9A9A9
+Dust Advisory,#DEB887
+Dust Storm Warning,#B22222
+Earthquake Warning,#8B0000
+Evacuation Immediate,#FF0000
+Extreme Heat Warning,#8B0000
+Extreme Heat Watch,#FF6347
+Extreme Cold Warning,#00008B
+Extreme Cold Watch,#4169E1
+Extreme Fire Danger,#FF0000
+Extreme Wind Warning,#FF8C00
+Fire Warning,#FF0000
+Fire Weather Watch,#FFDEAD
+Flash Flood Statement,#8B0000
+Flash Flood Warning,#8B0000
+Flash Flood Watch,#90EE90
+Flood Advisory,#808000
+Flood Statement,#228B22
+Flood Warning,#228B22
+Flood Watch,#00FF7F
+Freeze Warning,#00FFFF
+Freeze Watch,#AFEEEE
+Freezing Fog Advisory,#B0E0E6
+Freezing Spray Advisory,#00CED1
+Frost Advisory,#ADD8E6
+Gale Warning,#D2691E
+Gale Watch,#F4A460
+Hazardous Materials Warning,#4B0082
+Hazardous Seas Warning,#483D8B
+Hazardous Seas Watch,#6A5ACD
+Hazardous Weather Outlook,#EEE8AA
+Heat Advisory,#FF4500
+Heavy Freezing Spray Warning,#00BFFF
+Heavy Freezing Spray Watch,#87CEFA
+High Surf Advisory,#BA55D3
+High Surf Warning,#9400D3
+High Wind Warning,#A52A2A
+High Wind Watch,#CD853F
+Hurricane Force Wind Warning,#FF00FF
+Hurricane Force Wind Watch,#FF77FF
+Hurricane Warning,#FF00FF
+Hurricane Watch,#FFC0CB
+Hydrologic Outlook,#AFEEEE
+Ice Storm Warning,#00FFFF
+Lake Effect Snow Warning,#0000CD
+Lake Wind Advisory,#B0C4DE
+Lakeshore Flood Advisory,#7FFFD4
+Lakeshore Flood Statement,#66CDAA
+Lakeshore Flood Warning,#228B22
+Lakeshore Flood Watch,#66CDAA
+Law Enforcement Warning,#C71585
+Local Area Emergency,#FF1493
+Low Water Advisory,#20B2AA
+Marine Weather Statement,#FFDAB9
+Nuclear Power Plant Warning,#4B0082
+Radiological Hazard Warning,#8A2BE2
+Red Flag Warning,#FF0000
+Rip Current Statement,#40E0D0
+Severe Thunderstorm Warning,#FFA500
+Severe Thunderstorm Watch,#FFD700
+Severe Weather Statement,#FFA500
+Shelter In Place Warning,#FF1493
+Short Term Forecast,#98FB98
+Small Craft Advisory,#D2B48C
+Snow Squall Warning,#00FFFF
+Special Marine Warning,#FFA500
+Special Weather Statement,#FFE4B5
+Storm Surge Warning,#800080
+Storm Surge Watch,#EE82EE
+Storm Warning,#FF8C00
+Storm Watch,#F0E68C
+Tornado Warning,#FF0000
+Tornado Watch,#FFFF00
+Tropical Cyclone Local Statement,#FFE4E1
+Tropical Storm Warning,#FF7F50
+Tropical Storm Watch,#FFB6C1
+Tsunami Advisory,#40E0D0
+Tsunami Warning,#8B0000
+Tsunami Watch,#FFD700
+Typhoon Warning,#FF00FF
+Typhoon Watch,#FFC0CB
+Volcano Warning,#2F4F4F
+Wind Advisory,#D2B48C
+Winter Storm Warning,#0000CD
+Winter Storm Watch,#4B0082
+Winter Weather Advisory,#ADD8E6

@@ -13,7 +13,7 @@
 
   <script>
     async function loadCSV() {
-      const response = await fetch("record_time_series.csv");
+      const response = await fetch("Normals.csv");
       const text = await response.text();
 
       const rows = text.trim().split("\n").map(r => r.split(","));

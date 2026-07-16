@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Weather Window Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      background-color: #020617;
+      color: #e2e8f0;
+      font-family: Inter, system-ui, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.16), transparent 35%),
+                  linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: #e2e8f0;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 1.85rem;
+      letter-spacing: -0.03em;
+    }
+
+    .meta {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      margin-bottom: 18px;
+    }
+
+    #chart {
+      width: 100%;
+      max-width: 960px;
+      height: 540px;
+      border-radius: 18px;
+      box-shadow: 0 28px 80px rgba(15, 23, 42, 0.4);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .controls,
+    .nav-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      max-width: 960px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(15, 23, 42, 0.92);
+      color: #e2e8f0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+      font-size: 0.95rem;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: rgba(30, 41, 59, 0.96);
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+  </style>
+</head>
+<body>
+
+<h2>Seasonal Forecast Viewer</h2>
+<div class="meta" id="status">Loading forecast data…</div>
+<div id="chart"></div>
+
+<div class="controls">
+  <button id="memberButton">Next Member</button>
+</div>
+
+<div class="nav-buttons" id="windowButtons">
+  <button data-shift="-1">-1 hr</button>
+  <button data-shift="-3">-3 hr</button>
+  <button data-shift="-12">-12 hr</button>
+  <button data-shift="-24">-24 hr</button>
+  <button data-shift="-72">-72 hr</button>
+  <button data-shift="1">+1 hr</button>
+  <button data-shift="3">+3 hr</button>
+  <button data-shift="12">+12 hr</button>
+  <button data-shift="24">+24 hr</button>
+  <button data-shift="72">+72 hr</button>
+</div>
+
+<script>
+//gefs: "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_gefs_seamless&forecast_days=36&temperature_unit=fahrenheit"
+//ecmwf: "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=42.02&longitude=-76.21&hourly=temperature_2m&temporal_resolution=hourly_1&forecast_days=217&temperature_unit=fahrenheit"
+const apiUrl = "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=42.02&longitude=-76.21&hourly=temperature_2m&models=ncep_gefs_seamless&forecast_days=36&temperature_unit=fahrenheit";
+const WINDOW_SIZE = 168;
+
+let members = [];
+let time = [];
+let currentIndex = 0;
+let startIndex = 0;
+
+const statusLabel = document.getElementById("status");
+const memberButton = document.getElementById("memberButton");
+const chartContainer = document.getElementById("chart");
+
+memberButton.addEventListener("click", () => {
+  if (!members.length) return;
+  currentIndex = (currentIndex + 1) % members.length;
+  drawChart();
+});
+
+document.getElementById("windowButtons").addEventListener("click", event => {
+  const button = event.target.closest("button[data-shift]");
+  if (!button) return;
+  shiftWindow(Number(button.dataset.shift));
+});
+
+fetch(apiUrl)
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    time = Array.isArray(data.hourly?.time) ? data.hourly.time : [];
+    members = Object.entries(data.hourly || {})
+      .filter(([key]) => key !== "time")
+      .map(([name, values]) => ({ name, values }));
+
+    if (!time.length || !members.length) {
+      statusLabel.textContent = "No forecast data available.";
+      return;
+    }
+
+    statusLabel.textContent = `Showing ${members.length} member(s).`;
+    drawChart();
+  })
+  .catch(error => {
+    statusLabel.textContent = `Unable to load data: ${error.message}`;
+  });
+
+function formatStat(value) {
+  return value === null ? "N/A" : `${value.toFixed(1)}`;
+}
+
+function buildHoverStats(values) {
+  const customData = [];
+
+  let highestHi = null;
+  let highestLo = null;
+  let lowestHi = null;
+  let lowestLo = null;
+
+  for (let i = 1; i < values.length - 1; i++) {
+    const prev = values[i - 1];
+    const curr = values[i];
+    const next = values[i + 1];
+
+    // Skip invalid values
+    if (prev == null || curr == null || next == null) {
+      customData.push([formatStat(highestHi), formatStat(highestLo), formatStat(lowestHi), formatStat(lowestLo)]);
+      continue;
+    }
+
+    // Detect highs/lows (handles flat peaks too)
+    const isHigh = curr >= prev && curr >= next && (curr > prev || curr > next);
+    const isLow = curr <= prev && curr <= next && (curr < prev || curr < next);
+
+    if (isHigh) {
+      highestHi = highestHi === null ? curr : Math.max(highestHi, curr);
+      lowestHi = lowestHi === null ? curr : Math.min(lowestHi, curr);
+    }
+
+    if (isLow) {
+      highestLo = highestLo === null ? curr : Math.max(highestLo, curr);
+      lowestLo = lowestLo === null ? curr : Math.min(lowestLo, curr);
+    }
+
+    customData.push([
+      formatStat(highestHi),
+      formatStat(highestLo),
+      formatStat(lowestHi),
+      formatStat(lowestLo)
+    ]);
+  }
+
+  // Pad first & last points (since loop skips them)
+  customData.unshift(customData[0] || ["N/A","N/A","N/A","N/A"]);
+  customData.push(customData[customData.length - 1] || ["N/A","N/A","N/A","N/A"]);
+
+  return customData;
+}
+
+function drawChart() {
+  const member = members[currentIndex];
+  const endIndex = Math.min(startIndex + WINDOW_SIZE, time.length);
+  const slicedTime = time.slice(startIndex, endIndex);
+  const slicedValues = member.values.slice(startIndex, endIndex);
+  const customData = buildHoverStats(slicedValues);
+
+  const trace = {
+    x: slicedTime,
+    y: slicedValues,
+    customdata: customData,
+    mode: "lines",
+    line: { color: "#38bdf8", width: 3 },
+    hovertemplate:
+      "Time: %{x}<br>" +
+      "Current Temp: %{y:.1f}<br>" +
+      "Highest Hi Temp: %{customdata[0]}<br>" +
+      "Highest Lo Temp: %{customdata[1]}<br>" +
+      "Lowest Hi Temp: %{customdata[2]}<br>" +
+      "Lowest Lo Temp: %{customdata[3]}<br>" +
+      "<extra></extra>",
+    name: member.name
+  };
+
+  const layout = {
+    paper_bgcolor: "#0f172a",
+    plot_bgcolor: "#020617",
+    font: { color: "#e2e8f0" },
+    title: { text: `Member: ${member.name}`, font: { size: 20 } },
+    xaxis: {
+      title: "Time",
+      gridcolor: "rgba(148, 163, 184, 0.15)",
+      tickfont: { color: "#cbd5e1" }
+    },
+    yaxis: {
+      title: "Temperature (°F)",
+      gridcolor: "rgba(148, 163, 184, 0.15)",
+      tickfont: { color: "#cbd5e1" }
+    },
+    margin: { t: 64, b: 50, l: 60, r: 24 }
+  };
+
+  Plotly.react(chartContainer, [trace], layout, { responsive: true });
+}
+
+function shiftWindow(hours) {
+  startIndex = Math.max(0, Math.min(startIndex + hours, time.length - WINDOW_SIZE));
+  drawChart();
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,446 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NWS Severe Weather Gantt Chart</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f1417;
+            color: #e6eef6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h2 {
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+
+        #chart-wrapper {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(255,255,255,0.02);
+        }
+
+        #ganttChart {
+            width: 100%;
+            height: 70vh;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #9aa4ad;
+        }
+
+        .toggle-section {
+            margin-top: 16px;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.02);
+        }
+
+        .toggle-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+
+        .toggle-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .toggle-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.05);
+            color: #e6eef6;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .toggle-chip input {
+            margin: 0;
+        }
+
+        button#next-hour-filter {
+            color: #e6eef6;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 8px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        button#next-hour-filter:hover {
+            background: rgba(255,255,255,0.14);
+        }
+
+        #current-time,
+        #filter-status {
+            color: #c0d4f3;
+            margin-left: 16px;
+            font-size: 13px;
+        }
+
+        #filter-status {
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h2>NWS Severe Weather Alerts Gantt Chart</h2>
+    <div class="chart-header">
+        <span id="alert-count">Showing 0 alerts</span>
+        <span id="current-time">Now: --</span>
+        <span id="filter-status">Showing all alerts</span>
+        <button id="next-hour-filter">Show next hour only</button>
+    </div>
+    <div id="chart-wrapper">
+        <div id="ganttChart"></div>
+    </div>
+    <div id="alert-toggle-section" class="toggle-section"></div>
+
+    <script>
+        let ganttChart;
+        let showNextHourOnly = false;
+
+        function parseCsv(text) {
+            const rows = [];
+            const lines = text.trim().split(/\r?\n/);
+            for (const line of lines.slice(1)) {
+                if (!line.trim()) continue;
+                const [alert, color] = line.split(',');
+                if (alert && color) {
+                    rows.push({ alert: alert.trim(), color: color.trim() });
+                }
+            }
+            return rows;
+        }
+
+        async function loadAlertDefinitions() {
+            try {
+                const response = await fetch('alert.csv');
+                if (!response.ok) {
+                    throw new Error(`alert.csv request failed: ${response.status}`);
+                }
+                const text = await response.text();
+                return parseCsv(text);
+            } catch (error) {
+                console.error('Unable to load alert.csv:', error);
+                return [];
+            }
+        }
+
+        function buildAlertUrl(alertType) {
+            return `https://api.weather.gov/alerts/active?event=${encodeURIComponent(alertType)}`;
+        }
+
+        async function fetchAlertSeries(definition) {
+            try {
+                const response = await fetch(buildAlertUrl(definition.alert), {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0',
+                        'Accept': 'application/geo+json'
+                    }
+                });
+                if (!response.ok) {
+                    return { label: definition.alert, color: definition.color, alerts: [] };
+                }
+
+                const data = await response.json();
+                const features = Array.isArray(data.features) ? data.features : [];
+                const alerts = features.map((feature) => {
+                    const props = feature.properties || {};
+                    const start = new Date(props.onset || props.sent || Date.now());
+                    const end = new Date(props.ends || props.expires || Date.now());
+                    return {
+                        label: props.event || definition.alert,
+                        id: String(props.parameters?.VTEC || '').split('.')[5] || 'N/A',
+                        office: props.senderName || 'N/A',
+                        start,
+                        end,
+                        area: props.areaDesc || 'N/A',
+                        tw: props.parameters?.maxWindGust || 'N/A',
+                        th: props.parameters?.maxHailSize || 'N/A'
+                    };
+                });
+
+                return { label: definition.alert, color: definition.color, alerts };
+            } catch (error) {
+                console.error(`Unable to fetch alerts for ${definition.alert}:`, error);
+                return { label: definition.alert, color: definition.color, alerts: [] };
+            }
+        }
+
+        async function fetchAllAlertSeries() {
+            const definitions = await loadAlertDefinitions();
+            const seriesList = await Promise.all(definitions.map(fetchAlertSeries));
+            return seriesList.filter((series) => series.alerts.length > 0);
+        }
+
+        function formatAlertTime(value) {
+            return new Date(value).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
+
+        function updateAlertCount() {
+            const countEl = document.getElementById('alert-count');
+            if (!countEl || !ganttChart || !ganttChart.data) return;
+
+            const visibleCount = ganttChart.data[0]?.x?.length || 0;
+            countEl.textContent = `Showing ${visibleCount} alerts`;
+        }
+
+        function buildAlertRows(seriesList, activeTypes = null, showNextHourOnly = false) {
+            const allAlerts = [];
+
+            seriesList.forEach((series) => {
+                series.alerts.forEach((alert, alertIndex) => {
+                    allAlerts.push({
+                        ...alert,
+                        eventType: series.label,
+                        color: series.color || '#999999',
+                        duration: new Date(alert.end) - new Date(alert.start)
+                    });
+                });
+            });
+
+            let filtered = activeTypes
+                ? allAlerts.filter((alert) => activeTypes.has(alert.eventType))
+                : allAlerts;
+
+            if (showNextHourOnly) {
+                const now = Date.now();
+                const nextHour = now + 3600 * 1000;
+                filtered = filtered.filter((alert) => {
+                    const endTime = new Date(alert.end).getTime();
+                    return endTime > now && endTime <= nextHour;
+                });
+            }
+
+            filtered.sort((a, b) => {
+                const endDiff = new Date(a.end) - new Date(b.end);
+                if (endDiff !== 0) return endDiff;
+                return a.duration - b.duration;
+            });
+
+            return filtered.map((alert, index) => ({
+                ...alert,
+                y: `Alert ${index + 1}`
+            }));
+        }
+
+        function buildChartTrace(alertRows) {
+            return {
+                type: 'bar',
+                orientation: 'h',
+                x: alertRows.map((alert) => alert.duration),
+                base: alertRows.map((alert) => alert.start.getTime()),
+                y: alertRows.map((alert) => alert.y),
+                marker: {
+                    color: alertRows.map((alert) => alert.color),
+                    line: { color: '#111111', width: 0 }
+                },
+                hoverinfo: 'text',
+                hovertext: alertRows.map((alert) =>
+                    `Alert: ${alert.eventType}<br>Start: ${formatAlertTime(alert.start)}<br>End: ${formatAlertTime(alert.end)}<br>Office: ${alert.office}<br>Area: ${alert.area}`
+                ),
+                hoverlabel: {
+                    bgcolor: alertRows.map((alert) => alert.color),
+                    bordercolor: '#444444',
+                    font: { 
+                        color: alertRows.map((alert) => {
+                            const hex = alert.color.replace('#', '');
+                            const r = parseInt(hex.substring(0, 2), 16);
+                            const g = parseInt(hex.substring(2, 4), 16);
+                            const b = parseInt(hex.substring(4, 6), 16);
+                            const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+                            return (yiq >= 128) ? '#000000' : '#ffffff';
+                        })
+                    },
+                    align: 'left'
+                },
+                showlegend: false
+            };
+        }
+
+        function renderToggleSection(seriesList, activeTypes, onChange) {
+            const container = document.getElementById('alert-toggle-section');
+            container.innerHTML = '';
+
+            if (!seriesList.length) {
+                container.innerHTML = '<div class="toggle-chip">No active alert types available.</div>';
+                return;
+            }
+
+            const title = document.createElement('h3');
+            title.textContent = 'Toggle alert types';
+            container.appendChild(title);
+
+            const list = document.createElement('div');
+            list.className = 'toggle-list';
+
+            const eventTypes = [...new Set(seriesList.map((series) => series.label))];
+            eventTypes.forEach((eventType) => {
+                const label = document.createElement('label');
+                label.className = 'toggle-chip';
+
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = true;
+                input.dataset.eventType = eventType;
+                input.addEventListener('change', (event) => {
+                    const selectedType = event.target.dataset.eventType;
+                    if (event.target.checked) {
+                        activeTypes.add(selectedType);
+                    } else {
+                        activeTypes.delete(selectedType);
+                    }
+                    onChange();
+                });
+
+                const swatch = document.createElement('span');
+                swatch.textContent = '■';
+                swatch.style.color = seriesList.find((series) => series.label === eventType)?.color || '#999999';
+
+                label.appendChild(input);
+                label.appendChild(swatch);
+                label.appendChild(document.createTextNode(eventType));
+                list.appendChild(label);
+            });
+
+            container.appendChild(list);
+        }
+
+        async function createGanttChart() {
+            const plotDiv = document.getElementById('ganttChart');
+            let seriesList = await fetchAllAlertSeries();
+            const activeTypes = new Set(seriesList.map((series) => series.label));
+
+            const layout = {
+                paper_bgcolor: '#0f1417',
+                plot_bgcolor: '#0f1417',
+                font: { color: '#e6eef6' },
+                barmode: 'stack',
+                title: '',
+                shapes: [
+                    {
+                        type: 'line',
+                        xref: 'x',
+                        yref: 'paper',
+                        x0: Date.now(),
+                        x1: Date.now(),
+                        y0: 0,
+                        y1: 1,
+                        line: { color: '#ff6b6b', width: 2, dash: 'dashdot' }
+                    }
+                ],
+                xaxis: {
+                    type: 'date',
+                    title: 'Time',
+                    tickangle: 0,
+                    tickfont: { color: '#e6eef6' },
+                    gridcolor: 'rgba(255,255,255,0.08)',
+                    zerolinecolor: 'rgba(255,255,255,0.12)',
+                    hoverformat: '%b %d %H:%M',
+                    showgrid: true,
+                    nticks: 10
+                },
+                yaxis: {
+                    autorange: 'reversed',
+                    title: 'Alert rows',
+                    tickfont: { color: '#e6eef6', size: 11 },
+                    automargin: true,
+                    gridcolor: 'rgba(255,255,255,0.08)',
+                    tickmode: 'array',
+                    ticks: 'outside',
+                    showgrid: false
+                },
+                margin: { l: 180, r: 20, t: 10, b: 40 }
+            };
+
+            const updateCurrentTime = () => {
+                const now = new Date();
+                const currentTimeEl = document.getElementById('current-time');
+                if (currentTimeEl) {
+                    currentTimeEl.textContent = `Now: ${formatAlertTime(now)}`;
+                }
+                if (ganttChart) {
+                    Plotly.relayout(plotDiv, {
+                        'shapes[0].x0': now.getTime(),
+                        'shapes[0].x1': now.getTime()
+                    });
+                }
+            };
+
+            const updateChart = async () => {
+                const alertRows = buildAlertRows(seriesList, activeTypes, showNextHourOnly);
+                const trace = buildChartTrace(alertRows);
+                if (ganttChart) {
+                    await Plotly.react(plotDiv, [trace], layout);
+                } else {
+                    await Plotly.newPlot(plotDiv, [trace], layout, { responsive: true });
+                }
+                ganttChart = plotDiv;
+                updateAlertCount();
+                updateCurrentTime();
+            };
+
+            const filterButton = document.getElementById('next-hour-filter');
+            const filterStatus = document.getElementById('filter-status');
+            const updateFilterStatus = () => {
+                if (filterStatus) {
+                    filterStatus.textContent = showNextHourOnly ? 'Showing alerts ending in the next hour' : 'Showing all alerts';
+                }
+            };
+
+            if (filterButton) {
+                filterButton.addEventListener('click', () => {
+                    showNextHourOnly = !showNextHourOnly;
+                    filterButton.textContent = showNextHourOnly ? 'Show all alerts' : 'Show next hour only';
+                    updateFilterStatus();
+                    updateChart();
+                });
+            }
+            updateFilterStatus();
+
+            renderToggleSection(seriesList, activeTypes, updateChart);
+            await updateChart();
+
+            setInterval(async () => {
+                seriesList = await fetchAllAlertSeries();
+                renderToggleSection(seriesList, activeTypes, updateChart);
+                await updateChart();
+            }, 10000);
+
+            setInterval(updateCurrentTime, 1000);
+        }
+
+        window.addEventListener('load', () => {
+            createGanttChart().catch((error) => {
+                console.error('Plotly chart init failed:', error);
+                const countEl = document.getElementById('alert-count');
+                if (countEl) countEl.textContent = 'Plotly failed to load';
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,39 +1,26 @@
 import csv
+from datetime import datetime
 
-INPUT_FILE = "record.csv"
-OUTPUT_FILE = "temperature_only.csv"
+input_file = "Normals.csv"
+output_file = "Normals_epoch.csv"
 
-# possible names your temperature column might have
-TEMP_KEYS = ["temperature", "temp", "air_temperature"]
-
-def find_temp_key(header):
-    for key in TEMP_KEYS:
-        if key in header:
-            return key
-    return None
-
-with open(INPUT_FILE, "r", newline="") as infile:
+with open(input_file, newline="") as infile, open(output_file, "w", newline="") as outfile:
     reader = csv.DictReader(infile)
-    fieldnames = reader.fieldnames
+    
+    fieldnames = reader.fieldnames  # keep same columns
+    writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+    writer.writeheader()
 
-    if not fieldnames:
-        raise ValueError("CSV has no headers")
+    for row in reader:
+        ts = row["timestamp"].strip()
 
-    temp_key = find_temp_key(fieldnames)
+        try:
+            dt = datetime.strptime("2026-" + ts, "%Y-%m-%d %H:%M:%S")
+            row["timestamp"] = int(dt.timestamp())  # overwrite here
+        except Exception as e:
+            print("ERROR on:", ts, e)
+            row["timestamp"] = ""
 
-    if not temp_key:
-        raise ValueError(f"No temperature column found. Available columns: {fieldnames}")
+        writer.writerow(row)
 
-    with open(OUTPUT_FILE, "w", newline="") as outfile:
-        writer = csv.writer(outfile)
-
-        # write header
-        writer.writerow(["timestamp", temp_key])
-
-        for row in reader:
-            writer.writerow([
-                row.get("timestamp", ""),
-                row.get(temp_key, "")
-            ])
-
-print(f"Done -> {OUTPUT_FILE}")
+print("DONE → check Normals_epoch.csv")
