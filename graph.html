@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSV Plot Viewer (Optimized)</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+  <h3>Record Time Series Viewer</h3>
+
+  <select id="columnSelect"></select>
+  <div id="plot" style="width:100%;height:600px;"></div>
+
+  <script>
+    async function loadCSV() {
+      const response = await fetch("normal_minute.csv");
+      const text = await response.text();
+
+      const rows = text.trim().split("\n").map(r => r.split(","));
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const timestampIndex = headers.indexOf("timestamp");
+
+      // ---- PRECOMPUTE ARRAYS ONCE ----
+      const timestamps = new Array(dataRows.length);
+      const columns = {};
+
+      headers.forEach(h => columns[h] = new Array(dataRows.length));
+
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+
+        // epoch → Date (fast once, not repeated)
+        timestamps[i] = new Date(Number(row[timestampIndex]) * 1000);
+
+        for (let j = 0; j < headers.length; j++) {
+          const h = headers[j];
+          columns[h][i] = row[j];
+        }
+      }
+
+      // Convert all numeric columns once (except timestamp)
+      for (const h of headers) {
+        if (h !== "timestamp") {
+          columns[h] = columns[h].map(v => Number(v));
+        }
+      }
+
+      // ---- DROPDOWN ----
+      const select = document.getElementById("columnSelect");
+
+      headers.forEach(h => {
+        if (h !== "timestamp") {
+          const opt = document.createElement("option");
+          opt.value = h;
+          opt.textContent = h;
+          select.appendChild(opt);
+        }
+      });
+
+      function plotColumn(col) {
+        const trace = {
+          x: timestamps,
+          y: columns[col],
+          mode: "lines",
+          name: col
+        };
+
+        const layout = {
+          title: col,
+          xaxis: {
+            title: "Time (ET)",
+            type: "date"
+          },
+          yaxis: {
+            title: col
+          }
+        };
+
+        // faster than newPlot for updates
+        Plotly.react("plot", [trace], layout, { responsive: true });
+      }
+
+      select.addEventListener("change", () => {
+        plotColumn(select.value);
+      });
+
+      // initial plot
+      select.value = headers.find(h => h !== "timestamp");
+      plotColumn(select.value);
+    }
+
+    loadCSV();
+  </script>
+</body>
+</html>
