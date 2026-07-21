@@ -248,6 +248,109 @@
       white-space: nowrap;
     }
 
+
+    
+    /* Current temp: large, aligned to the right of the right column */
+    #normals-temp {
+      background: linear-gradient(180deg, var(--card), rgba(17, 21, 25, 0.95));
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-weight: 800;
+      box-shadow: 0 6px 18px rgba(2, 6, 8, 0.6);
+      max-width: 520px;
+      width: fit-content;
+      align-self: flex-start;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    #normals-temp .normal-left {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 130px;
+    }
+
+    #normals-temp .current-temp-normal {
+      font-size: clamp(32px, 8vw, 72px);
+      color: var(--accent);
+    }
+
+    #normals-temp .normal-right {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    #normals-temp .normal-stat-block {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* Feels-like and small metrics styling */
+    #normals-temp .normal-stat-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    #normals-temp .normal-percentage {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    #normals-temp .normal-pvalue {
+      font-size: 18px;
+      font-weight: 800;
+      color: #ffd68a;
+      margin-top: 2px;
+    }
+
+    #normals-temp .normal-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px 1px;
+      align-items: center;
+      font-size: 11px;
+    }
+
+    #normals-temp .normal-metrics .normal-metric {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    #normals-temp .normal-actual {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    #normals-temp .normal-info {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    #normals-temp .normal-info-label {
+      font-weight: 600;
+      color: #e6eef6;
+    }
+
+    .graph-info-wrapper {
+      font-size: 12px;
+    }
+
+    .graph-info {
+      font-weight: 600;
+      color: #e6eef6;
+    }
+
     #temp-graph-container {
       background: linear-gradient(180deg, var(--card), rgba(17, 21, 25, 0.9));
       border-radius: 12px;
@@ -301,7 +404,7 @@
     }
 
     #clock-display {
-      font-size: 50px;
+      font-size: 60px;
       position: relative;
       color: var(--accent);
       font-family: 'Courier New', monospace;
@@ -309,26 +412,6 @@
       text-align: center;
     }
 
-    #clock-detail-holder {
-      margin-top: 8px;
-      width: 50%;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    #clock-detail-holder .temp-info,
-    #clock-detail-holder .temp-time {
-      font-size: 11px;
-      color: var(--muted);
-      line-height: 1.35;
-      font-weight: 500;
-    }
-
-    #clock-detail-holder .temp-info-label {
-      font-weight: 600;
-      color: #e6eef6;
-    }
 
     .clock-label {
       font-size: 10px;
@@ -360,26 +443,32 @@
     <div id="right-column">
       <div id="top-row">
         <div id="clock-container">
-
-
-          <div id="clock-detail-holder">
-            <div class="temp-info"><span class="temp-info-label">Obs start:</span> <span id="obs-start">--</span></div>
-            <div class="temp-info" id="api-progress-row" style="display:none;"><span
-                class="temp-info-label">Loading:</span> <span id="api-progress">--</span></div>
-            <div class="temp-info" id="trace-count-row" style="display:flex;"><span class="temp-info-label">Trace
-                count:</span> <span id="trace-count">--</span></div>
-            <div class="temp-info" id="forecast-row" style="display:none;"><span class="temp-info-label"
-                id="forecast-end-label">Forecast ends: </span> <span id="forecast-end">--</span></div>
-            <div class="temp-info" id="threshold-row" style="display:none;"><span class="temp-info-label"
-                id="threshold-reach-label">-- </span> <span id="threshold-reach">--</span></div>
-            <div class="temp-info"><span class="temp-info-label">Next Obs Update:</span> <span
-                id="next-obs-update">--</span></div>
-            <div class="temp-info"><span class="temp-info-label">Next forecast update:</span> <span
-                id="next-forecast-update">--</span></div>
-          </div>
           <strong>
             <div id="clock-display">--:--:--</div>
           </strong>
+        </div>
+        
+        <div id="normals-temp">
+          <div class="normal-left">
+            <div id="current-temp-normal" class="current-temp-normal">--°F</div>
+          </div>
+          <div class="normal-right">
+            <div class="normal-stat-block">
+              <div class="normal-percentage">Percentile</div>
+              <div id="normal-pvalue" class="normal-pvalue">--%</div>
+              <div class="normal-metrics">
+                <div id="normal-DPDiff" class="normal-metric">DP Dif: --°F</div>
+                <div id="normal-FeelsLike" class="normal-metric">Feels like: --°F</div>
+                <div id="normal-DPPvalue" class="normal-metric">DP %: --°F</div>
+                <div id="normal-RH" class="normal-metric">RH: --%</div>
+              </div>
+            </div>
+            <div class="normal-actual">
+              <span class="normal-info-label">Temp:</span> <span id="normal-temp-actual">-- (--/--)</span> <br>
+              <span class="normal-info-label">DP:</span> <span id="normal-dp-actual">-- (--/--)</span> (<span id="normal-rh-actual">--%</span>)<br>
+              <span class="normal-info-label">Apperent Temp:</span> <span id="normal-ATemp-actual">--/--</span>
+            </div>
+          </div>
         </div>
 
         <div id="current-temp">
@@ -397,12 +486,18 @@
                 <div id="current-solar" class="metric">Solar: -- W/m²</div>
               </div>
             </div>
-            <div class="temp-time"><span class="temp-info-label">Observed:</span> --</div>
+            <div class="temp-time">
+              <span class="temp-info-label">Observed:</span> <span class="obs-time">--</span><br>
+              <span class="temp-info-label">Next Update:</span> <span id="next-obs-update">--</span> | <span id="next-forecast-update">--</span>
+              <div id="api-progress" style="display:none;">
+                <span class="temp-info-label">Loading:</span> <span id="api-progress-value"></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
       <div id="temp-graph-container">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:1px;flex-wrap:wrap;">
           <button onclick="toggleFullscreen()">Fullscreen Graph</button>
           <!-- new controls for graph range -->
           <span id="graph-range-wrapper" style="display:flex;gap:6px;align-items:center;">
@@ -485,6 +580,11 @@
             <input type="datetime-local" id="end-dt"
               style="border-radius:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-weight:600;">
           </span>
+
+        </div>
+        <div class="graph-info-wrapper" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <span class="graph-info">Graph Range:</span> <span id="obs-start">loading</span>-<span id="forecast-end">loading</span>|
+          <span class="graph-info">Traces:</span> <span id="trace-count">---</span>
         </div>
         <div id="temp-graph"></div>
       </div>
@@ -494,6 +594,7 @@
   <script>
     const DEVICE_ID = 470036;
     const API_KEY = "4ca9b677-d072-439f-8920-22ea9c630dd8";
+    const normal_file = "normal.csv"
     // Convert C → F (returns number)
     const cToF = c => (c * 9 / 5 + 32);
 
@@ -583,6 +684,27 @@
       }
     }
 
+    function calculateNormalCDF(z) {
+      var x = z / Math.sqrt(2);
+
+      const sign = x >= 0 ? 1 : -1;
+      x = Math.abs(x);
+
+      const a1 = 0.254829592;
+      const a2 = -0.284496736;
+      const a3 = 1.421413741;
+      const a4 = -1.453152027;
+      const a5 = 1.061405429;
+      const p = 0.3275911;
+
+      const t = 1 / (1 + p * x);
+      const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+      const erf = sign * y;
+
+      return 0.5 * (1 + erf);
+    }
+
     // Parse the WeatherFlow CSV as observation objects
     function parseWeatherFlowCsv(text) {
       const lines = text.trim().split('\n');
@@ -667,13 +789,35 @@
       }
     }
 
-    async function fetchCsvDataWithProgress(url) {
-      const data = await fetchCsvData(url);
-      if (data && data.length > 0) {
-        apiCallsSuccess++;
-        updateApiProgress();
+    async function fetchnormalcsv(timeoutMs = 2000) {
+      const start = Date.now();
+
+      while (Date.now() - start < timeoutMs) {
+        try {
+          const resp = await fetch(normal_file);
+
+          if (resp.ok) {
+            return await resp.text();
+          }
+
+        } catch (err) {
+          console.warn("Fetch error:", err);
+        }
+
+        await new Promise(r => setTimeout(r, 500));
       }
-      return data;
+
+      return "Err"
+    }
+
+    function normal_format_date(date_time) {
+      const month = String(date_time.getMonth() + 1).padStart(2, "0");
+      const day = String(date_time.getDate()).padStart(2, "0");
+      const hour = String(date_time.getHours()).padStart(2, "0");
+      const minute = String(date_time.getMinutes()).padStart(2, "0");
+
+      const normal_datestr = `${month}${day}${hour}${minute}`
+      return normal_datestr
     }
 
     // Track observation data info
@@ -745,8 +889,8 @@
       const minute = now.getMinutes();
       const second = now.getSeconds();
 
-      // Forecast updates at :02, :17, :32, :47
-      const forecastMinutes = [2, 17, 32, 47];
+      // Forecast updates at :01, :16, :31, :46
+      const forecastMinutes = [1, 16, 31, 46];
       let nextForecastMin = null;
 
       // Find next forecast minute in current hour
@@ -808,7 +952,7 @@
       const start = now - 86400;
       const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
         `?time_start=${start}&time_end=${now}&format=csv&api_key=${API_KEY}`;
-      return fetchCsvDataWithProgress(url);
+      return fetchCsvData(url);
     }
 
     // Fetch data for an arbitrary range (seconds). If range is <=24h we simply
@@ -829,29 +973,31 @@
     async function fetchTempDataChunked(startTs, endTs) {
       if (startTs >= endTs) return [];
       let all = [];
-      apiCallsSuccess = 0;
-      updateApiProgress();
-
       let current = startTs;
       while (current < endTs) {
         const chunkEnd = Math.min(current + 86400, endTs);
         const url = `https://swd.weatherflow.com/swd/rest/observations/device/${DEVICE_ID}` +
           `?time_start=${current}&time_end=${chunkEnd}&format=csv&api_key=${API_KEY}`;
-        const chunkData = await fetchCsvDataWithProgress(url);
+        const chunkData = await fetchCsvData(url);
         if (chunkData && chunkData.length > 0) {
+          apiCallsSuccess++
+          updateApiProgress();
           all = all.concat(chunkData);
         }
         // Add 100ms delay between API calls for server safety
         await new Promise(resolve => setTimeout(resolve, 100));
         current = chunkEnd;
       }
+      apiCallsSuccess = 0
+      updateApiProgress();
       return all;
     }
 
     // Update the API progress display
     function updateApiProgress() {
-      const progressEl = document.getElementById('api-progress');
-      const progressRow = document.getElementById('api-progress-row');
+      const progressEl = document.getElementById('api-progress-value');
+      const progressRow = document.getElementById('api-progress');
+      
       if (!progressEl || !progressRow) return;
 
       if (apiCallsSuccess === 0) {
@@ -1106,6 +1252,7 @@
       await fetchAllForecasts();
       const currentTemp = latest.tempF;
       const currentTimeStr = new Date(latest.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const currentTimefull = new Date(latest.ts * 1000).toLocaleString();
 
       // Update current temp display
       const tempEl = document.querySelector('#current-temp .temp-value');
@@ -1143,6 +1290,99 @@
         if (solarVal !== null) solarEl.textContent = `Solar: ${solarVal.toFixed(0)} W/m²`;
         else solarEl.textContent = `Solar: -- W/m²`;
       }
+
+      // Normal fetching and calulations
+      normal_data = await fetchnormalcsv();
+      normal_date_time = normal_format_date(new Date(latest.ts * 1000));
+
+      if (normal_data != "Err") {
+        const normal_lines = normal_data.split(/\r?\n/);
+        const normal_headers = normal_lines[0].split(",");
+        //DATE,DP10,DP90,DP,Temp10,Temp90,Temp,Wind,Heat
+        const normal_dateIndex = normal_headers.indexOf("DATE");
+        const tempIndex = normal_headers.indexOf("Temp");
+        const temp90Index = normal_headers.indexOf("Temp90");
+        const temp10Index = normal_headers.indexOf("Temp10");
+        const DewPointIndex = normal_headers.indexOf("DP");
+        const DewPoint90Index = normal_headers.indexOf("DP90");
+        const DewPoint10Index = normal_headers.indexOf("DP10");
+        const WindChillIndex = normal_headers.indexOf("Wind");
+        const HeatIndexIndex = normal_headers.indexOf("Heat");
+
+        if (normal_dateIndex === -1) {console.error("Date Column in normal csv not found")}
+
+        const foundNormalLine = normal_lines.splice(1).find(line => {
+          const normal_columns = line.split(",");
+          return normal_columns[normal_dateIndex] === normal_date_time;
+        })
+
+        const CurrentNormals = foundNormalLine.split(",");
+        const NormalTemp = CurrentNormals[tempIndex];
+        const Normaltemp90 = CurrentNormals[temp90Index];
+        const Normaltemp10 = CurrentNormals[temp10Index];
+        const NormalDP = CurrentNormals[DewPointIndex];
+        const NormalDP90 = CurrentNormals[DewPoint90Index];
+        const NormalDP10 = CurrentNormals[DewPoint10Index];
+        const NormalWindChill = CurrentNormals[WindChillIndex];
+        const NormalHeatIndex = CurrentNormals[HeatIndexIndex];
+        const NormalRH = calculateRelativeHumidity(Number(NormalTemp), Number(NormalDP));
+
+        const TempNormalDiff = currentTemp - NormalTemp;
+        const DPDiff = dewpoint - NormalDP;
+        const RHDiff = rhVal - NormalRH;
+        var NormalFeelsLike = 0;
+        
+        if (currentTemp >= 50) {
+          NormalFeelsLike = NormalHeatIndex;
+        } else {
+          NormalFeelsLike = NormalWindChill;
+        }
+
+        const FeelsLikeDiff = feels - NormalFeelsLike;
+        
+
+
+        const NormalTempSD = (Normaltemp90 - Normaltemp10) / 2.5632
+        const NormalDPSD = (NormalDP90 - NormalDP10) / 2.5632
+        const NormalTempZValue = (currentTemp - NormalTemp) / NormalTempSD;
+        const NormalDPZValue = (dewpoint - NormalDP) / NormalDPSD;
+
+        const TempNormalPercentile = calculateNormalCDF(NormalTempZValue) * 100;
+        const DPNormalPercentile = calculateNormalCDF(NormalDPZValue) * 100;
+
+        const TempDiffHTML = document.getElementById("current-temp-normal");
+        const TempPercentHTML = document.getElementById("normal-pvalue");
+        const DPDiffHTML = document.getElementById("normal-DPDiff");
+        const FeelsLikeDifHTML = document.getElementById("normal-FeelsLike");
+        const DPPercentHTML = document.getElementById("normal-DPPvalue");
+        const RHDiffHTML = document.getElementById("normal-RH");
+
+        if (TempNormalDiff) TempDiffHTML.textContent = `${TempNormalDiff.toFixed(1)}°F`;
+        if (TempNormalPercentile) TempPercentHTML.textContent = `${TempNormalPercentile.toFixed(3)}%`;
+        if (DPDiff) DPDiffHTML.textContent = `DP Dif: ${DPDiff.toFixed(1)}°F`;
+        if (FeelsLikeDiff) FeelsLikeDifHTML.textContent = `Feels Like Dif: ${FeelsLikeDiff.toFixed(1)}°F`;
+        if (DPNormalPercentile) DPPercentHTML.textContent = `DP %: ${DPNormalPercentile.toFixed(3)}%`;
+        if (RHDiff) RHDiffHTML.textContent = `RH Dif: ${RHDiff.toFixed(1)}%`;
+
+
+        const NormalTempActualHTML = document.getElementById("normal-temp-actual");
+        const NormalDPActualHTML = document.getElementById("normal-dp-actual");
+        const NormalRHActualHTML = document.getElementById("normal-rh-actual");
+        const NormalATActualHTML = document.getElementById("normal-ATemp-actual");
+
+        if (NormalTemp && Normaltemp10 && Normaltemp90) NormalTempActualHTML.textContent = `${NormalTemp}°F (${Normaltemp10}°F/${Normaltemp90}°F)`
+        if (NormalDP && NormalDP10 && NormalDP90) NormalDPActualHTML.textContent = `${NormalDP}°F (${NormalDP10}°F/${NormalDP90}°F)`
+        if (NormalRH) NormalRHActualHTML.textContent = `${NormalRH.toFixed(1)}%`
+        if (NormalHeatIndex && NormalWindChill) NormalATActualHTML.textContent = `${NormalWindChill}°F/${NormalHeatIndex}°F`
+
+
+      } else {
+        document.getElementById("normals-temp").style.display = "None"
+      }
+
+      
+
+      
 
       // Color the main temp according to temperature values
 
@@ -1260,6 +1500,7 @@
 
       let data;
       if (startVal && endVal) {
+        console.log(startVal, endVal);
         const startTs = Math.floor(new Date(startVal).getTime() / 1000);
         const endTs = Math.floor(new Date(endVal).getTime() / 1000);
         // Only use cache if it's a user update (not scheduled) and matches cached range
@@ -2716,42 +2957,20 @@
       }
 
       // Update current temp display with observed time only
-      const tempTimeHtml = `<span class="temp-info-label">Observed:</span> ${currentTimeStr}`;
+      const tempTimeHtml = currentTimeStr;
       document.querySelector("#current-temp .temp-value").innerHTML = `<span class="trend ${trendClass}">${trendChar}</span>${currentTemp.toFixed(1)}°F`;
       document.querySelector("#current-temp .temp-value").style.color = currentColor;
-      document.querySelector("#current-temp .temp-time").innerHTML = tempTimeHtml;
+      document.querySelector("#current-temp .obs-time").innerHTML = tempTimeHtml;
 
-      // Update clock info with forecast details
-      const forecastRow = document.getElementById('forecast-row');
-      const thresholdRow = document.getElementById('threshold-row');
-      const forecastEndEl = document.getElementById('forecast-end');
-      const forecastEndLabelEl = document.getElementById('forecast-end-label');
-      const thresholdReachEl = document.getElementById('threshold-reach');
-      const thresholdReachLabelEl = document.getElementById('threshold-reach-label');
+      if (startVal && endVal) var RangeEndTime = new Date(endVal).toLocaleString();
 
-      if (forecastEndEl) {
-        forecastEndEl.textContent = forecastEndTime || '--';
-      }
-      if (forecastEndLabelEl) {
-        forecastEndLabelEl.textContent = 'Forecast ends: ';
-      }
-      if (forecastRow) {
-        forecastRow.style.display = (forecastEndTime && !thresholdValue) ? 'flex' : 'none';
+
+      const EndEl = document.getElementById('forecast-end');
+      if (EndEl) {
+        EndEl.textContent =  RangeEndTime || forecastEndTime || thresholdReachTime || currentTimefull;
       }
 
-      if (thresholdReachLabelEl) {
-        thresholdReachLabelEl.textContent = thresholdValue
-          ? ensembleThresholdActive
-            ? `Mean ensemble crosses ${thresholdValue}°: `
-            : `${thresholdValue}° will be reached: `
-          : '';
-      }
-      if (thresholdReachEl) {
-        thresholdReachEl.textContent = thresholdReachTime || '--';
-      }
-      if (thresholdRow) {
-        thresholdRow.style.display = (thresholdReachTime && thresholdValue !== null) ? 'flex' : 'none';
-      }
+
       } catch (err) {
         console.error('Dashboard update failed:', err);
         const traceCountEl = document.getElementById('trace-count');
@@ -2867,6 +3086,11 @@
     function updateRangeFieldsVisibility() {
       const showRange = document.getElementById('show-range-fields').checked;
       document.getElementById('range-fields').style.display = showRange ? 'flex' : 'none';
+      if (!showRange) {
+        document.getElementById('start-dt').value = ""
+        document.getElementById('end-dt').value = ""
+        updateDashboard();
+      }
     }
     // replot when graph controls change
     document.getElementById('range-value').addEventListener('change', () => {
